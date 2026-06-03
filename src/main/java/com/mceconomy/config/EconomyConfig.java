@@ -359,6 +359,10 @@ public final class EconomyConfig {
 		return data.employedMarketCompanyShare;
 	}
 
+	public static double ceoCompanyProfitShare() {
+		return data.ceoCompanyProfitShare;
+	}
+
 	public static int depotReserveFreeStacks() {
 		return data.depotReserveFreeStacks;
 	}
@@ -618,15 +622,15 @@ public final class EconomyConfig {
 		public double launderServiceFeePercent = 0.08;
 		public double blackMarketSellMultiplier = 0.85;
 		public double blackMarketBuyPremium = 1.25;
-		public long exchangeListingFeeMg = 5_000_000;
-		public long tokenCreationFeeMg = 10_000_000;
-		public long bankCertificateCostMg = 20_000_000;
+		public long exchangeListingFeeMg = 80_000;
+		public long tokenCreationFeeMg = 150_000;
+		public long bankCertificateCostMg = 300_000;
 		public double exchangePriceImpact = 0.02;
 		public boolean webDashboardEnabled = true;
 		public int webPort = 8765;
 		public String webBindAddress = "0.0.0.0";
-		public long minCompanyWealthMg = 500_000;
-		public long companyCreationFeeMg = 100_000;
+		public long minCompanyWealthMg = 15_000;
+		public long companyCreationFeeMg = 4_000;
 		public int maxPendingApplications = 5;
 		public int maxEmployeesPerCompany = 8;
 		public double workforceApplicationChance = 0.35;
@@ -647,6 +651,8 @@ public final class EconomyConfig {
 		public double employedQuestPlayerPayShare = 0.35;
 		/** Istihdamda uygun emtia market satisinin sirkete giden payi */
 		public double employedMarketCompanyShare = 0.65;
+		/** CEO ortaginin urettigi nakit kazancin sirket kasasina giden payi (0.5 = yarisi) */
+		public double ceoCompanyProfitShare = 0.5;
 		public int depotReserveFreeStacks = 2;
 		public int companyVaultReserveFreeStacks = 2;
 		public int depotArchiveBulletinMinItems = 128;
@@ -668,8 +674,8 @@ public final class EconomyConfig {
 		public int wantedSerialSearchDays = 3;
 		public long falseTipPenaltyMg = 150_000;
 		public int falseTipScanThreshold = 3;
-		public long insurancePersonalPremiumMg = 500_000;
-		public long insuranceCompanyPremiumMg = 2_000_000;
+		public long insurancePersonalPremiumMg = 10_000;
+		public long insuranceCompanyPremiumMg = 40_000;
 		public double insuranceCoveragePercent = 0.25;
 		public long insurancePremiumIntervalMs = 2_592_000_000L;
 		public double insurancePayoutShareOfLoss = 0.5;
@@ -720,7 +726,7 @@ public final class EconomyConfig {
 		public double npcEconomyActivityChance = 0.28;
 		public int taxEvasionAuditIntervalTicks = 2400;
 		public double taxEvasionDirtyRatioThreshold = 0.35;
-		public long guildCreationFeeMg = 50_000;
+		public long guildCreationFeeMg = 3_000;
 		public int guildMaxMembers = 12;
 		public int guildStrikeMaxMinutes = 30;
 		public int tradeDisputeWindowHours = 48;

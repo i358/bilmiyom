@@ -2,6 +2,7 @@ package com.mceconomy.command;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.company.Company;
+import com.mceconomy.company.EmploymentRole;
 import com.mceconomy.company.PlayerEmployment;
 import com.mceconomy.company.PlayerEmploymentService;
 import com.mceconomy.company.PlayerJobApplication;
@@ -48,6 +49,15 @@ public final class WorkCommand {
 																LongArgumentType.getLong(ctx, "maas"),
 																StringArgumentType.getString(ctx, "mesaj"))))))))
 				.then(literal("durum").executes(ctx -> status(ctx.getSource())))
+				.then(literal("basvuru-iptal").executes(ctx -> cancelApplication(ctx.getSource())))
+				.then(literal("basvur-ceo")
+						.then(argument("sirket", StringArgumentType.string())
+								.executes(ctx -> applyCeo(ctx.getSource(),
+										StringArgumentType.getString(ctx, "sirket"), null))
+								.then(argument("mesaj", StringArgumentType.greedyString())
+										.executes(ctx -> applyCeo(ctx.getSource(),
+												StringArgumentType.getString(ctx, "sirket"),
+												StringArgumentType.getString(ctx, "mesaj"))))))
 				.then(literal("ayril").executes(ctx -> quit(ctx.getSource())))
 				.then(literal("sirketler").executes(ctx -> listCompanies(ctx.getSource()))));
 	}
@@ -77,14 +87,24 @@ public final class WorkCommand {
 			Company company = McEconomyMod.getEconomyManager().companyManager().allCompanies().stream()
 					.filter(c -> c.id() == emp.companyId()).findFirst().orElse(null);
 			String companyName = company != null ? company.name() : "?";
+			boolean ceo = EmploymentRole.isCeo(emp.roleId());
 			JobType role = JobType.fromString(emp.roleId());
-			long nextPayMs = emp.lastPaidAt() + EconomyConfig.playerDailySalaryIntervalMs();
-			long waitMin = Math.max(0, (nextPayMs - System.currentTimeMillis()) / 60_000);
-			source.sendSuccess(() -> Component.literal(
-					"§e=== Is Durumu ===\n§fSirket: §a" + companyName
-							+ "\n§fRol: §7" + (role != null ? role.displayName() : emp.roleId())
-							+ "\n§fMaas: §a" + GoldStandard.formatMilligrams(emp.salaryMg())
-							+ " §7(gunluk)\n§fSonraki odeme: §7~" + waitMin + " dk"), false);
+			if (ceo) {
+				source.sendSuccess(() -> Component.literal(
+						"§e=== Is Durumu ===\n§fSirket: §a" + companyName
+								+ "\n§fRol: §6CEO Ortak"
+								+ "\n§fKazanc payi: §a%" + (int) (EmploymentRole.playerProfitShare() * 100)
+								+ " size, %" + (int) (EmploymentRole.companyProfitShare() * 100)
+								+ " sirket\n§7Kisisel mesleginizle §e/gorev al"), false);
+			} else {
+				long nextPayMs = emp.lastPaidAt() + EconomyConfig.playerDailySalaryIntervalMs();
+				long waitMin = Math.max(0, (nextPayMs - System.currentTimeMillis()) / 60_000);
+				source.sendSuccess(() -> Component.literal(
+						"§e=== Is Durumu ===\n§fSirket: §a" + companyName
+								+ "\n§fRol: §7" + (role != null ? role.displayName() : emp.roleId())
+								+ "\n§fMaas: §a" + GoldStandard.formatMilligrams(emp.salaryMg())
+								+ " §7(gunluk)\n§fSonraki odeme: §7~" + waitMin + " dk"), false);
+			}
 			return 1;
 		}
 		var pending = service.pendingApplicationForPlayer(player.getUUID());
@@ -95,13 +115,41 @@ public final class WorkCommand {
 			source.sendSuccess(() -> Component.literal(
 					"§eBekleyen basvuru: §f" + (company != null ? company.name() : "?")
 							+ " §7(" + app.roleId() + ", "
-							+ GoldStandard.formatMilligrams(app.requestedSalaryMg()) + ")"), false);
+							+ GoldStandard.formatMilligrams(app.requestedSalaryMg()) + ")"
+							+ "\n§e/is basvuru-iptal §7— basvuruyu geri cek"), false);
 			return 1;
 		}
 		source.sendSuccess(() -> Component.literal(
 				"§7Bir sirkette calismiyorsunuz.\n§e/is sirketler §7— sirket listesi\n"
-						+ "§e/is basvur <sirket> <rol> <maas> §7— basvuru"), false);
+						+ "§e/is basvur <sirket> <rol> <maas> §7— maasli basvuru\n"
+						+ "§e/is basvur-ceo <sirket> §7— CEO ortak (kazanc yarisi)"), false);
 		return 1;
+	}
+
+	private static int applyCeo(CommandSourceStack source, String companyName, String message) {
+		ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			return 0;
+		}
+		PlayerEmploymentService service = McEconomyMod.getEconomyManager().playerEmploymentService();
+		if (service.apply(player, source.getServer(), companyName, EmploymentRole.CEO_ID, 0, message)) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private static int cancelApplication(CommandSourceStack source) {
+		ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			return 0;
+		}
+		PlayerEmploymentService service = McEconomyMod.getEconomyManager().playerEmploymentService();
+		if (service.cancelPendingApplication(player.getUUID(), source.getServer())) {
+			source.sendSuccess(() -> Component.literal("§aIs basvurunuz geri cekildi."), false);
+			return 1;
+		}
+		source.sendFailure(Component.literal("§cBekleyen is basvurunuz yok."));
+		return 0;
 	}
 
 	private static int quit(CommandSourceStack source) {
@@ -126,8 +174,9 @@ public final class WorkCommand {
 		}
 		source.sendSuccess(() -> Component.literal("§e=== Sirketler ==="), false);
 		for (Company company : companies) {
-			source.sendSuccess(() -> Component.literal("§f" + company.name() + " §7— /is basvur "
-					+ company.name() + " <rol> <maas>"), false);
+			source.sendSuccess(() -> Component.literal("§f" + company.name()
+					+ " §7— /is basvur " + company.name() + " <rol> <maas> | /is basvur-ceo "
+					+ company.name()), false);
 		}
 		long minSalary = EconomyConfig.baseNpcSalaryMg();
 		long maxSalary = minSalary + EconomyConfig.maxNpcSalaryBonusMg();

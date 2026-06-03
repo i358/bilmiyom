@@ -681,10 +681,28 @@ async function loadEmployment() {
     sel.innerHTML = (data.companies || []).map(c => `<option value="${c.name}">${c.name}</option>`).join('')
       || '<option value="">Şirket yok</option>';
   }
+  const cancelBtn = document.getElementById('employmentCancelAppBtn');
+  const applyBtn = document.getElementById('employmentApplyBtn');
+  const quitBtn = document.getElementById('employmentQuitBtn');
   if (data.employment) {
-    status.innerHTML = `<strong>${data.employment.company}</strong> — ${data.employment.role} · Maaş: ${data.employment.salary}<br><span class="hint">Şirket görevi: Meslek → Görev Al. Teslim edilen ürünler şirkete gider.</span>`;
+    const isCeo = data.employment.role === 'ceo';
+    status.innerHTML = isCeo
+      ? `<strong>${data.employment.company}</strong> — <span class="warn-text">CEO Ortak</span><br><span class="hint">Kazancın yarısı sizde, yarısı şirket kasasında. Kişisel mesleğinizle Meslek → Görev Al.</span>`
+      : `<strong>${data.employment.company}</strong> — ${data.employment.role} · Maaş: ${data.employment.salary}<br><span class="hint">Şirket görevi: Meslek → Görev Al. Teslim edilen ürünler şirkete gider.</span>`;
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (applyBtn) applyBtn.style.display = '';
+    if (quitBtn) quitBtn.style.display = '';
+  } else if (data.pendingApplication) {
+    const p = data.pendingApplication;
+    status.innerHTML = `<span class="warn-text">Bekleyen başvuru:</span> <strong>${p.company}</strong> — ${p.role} · ${p.salary}<br><span class="hint">Geri çekmek için aşağıdaki düğme veya <code>/is basvuru-iptal</code></span>`;
+    if (cancelBtn) cancelBtn.style.display = '';
+    if (applyBtn) applyBtn.style.display = 'none';
+    if (quitBtn) quitBtn.style.display = 'none';
   } else {
     status.textContent = 'Şu an bir şirkette çalışmıyorsunuz.';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    if (applyBtn) applyBtn.style.display = '';
+    if (quitBtn) quitBtn.style.display = '';
   }
   const rows = data.salaryHistory || [];
   if (histBox) {
@@ -1103,11 +1121,31 @@ document.getElementById('questCompleteBtn').onclick = () => doAction('/actions/q
 document.getElementById('questCancelBtn').onclick = () => doAction('/actions/quest/cancel', {}, refresh);
 document.getElementById('jobResignBtn').onclick = () => doAction('/actions/job/resign', {}, refresh);
 
-document.getElementById('employmentApplyBtn')?.addEventListener('click', () => doAction('/actions/employment/apply', {
-  company: document.getElementById('employmentCompany')?.value,
-  role: document.getElementById('employmentRole')?.value,
-  salaryMg: +document.getElementById('employmentSalary')?.value
-}, () => { loadEmployment(); refresh(); }));
+function syncEmploymentRoleUi() {
+  const role = document.getElementById('employmentRole')?.value;
+  const salaryInput = document.getElementById('employmentSalary');
+  if (!salaryInput) return;
+  if (role === 'ceo') {
+    salaryInput.value = '0';
+    salaryInput.disabled = true;
+  } else {
+    salaryInput.disabled = false;
+    if (+salaryInput.value === 0) salaryInput.value = '50000';
+  }
+}
+document.getElementById('employmentRole')?.addEventListener('change', syncEmploymentRoleUi);
+syncEmploymentRoleUi();
+
+document.getElementById('employmentApplyBtn')?.addEventListener('click', () => {
+  const role = document.getElementById('employmentRole')?.value;
+  doAction('/actions/employment/apply', {
+    company: document.getElementById('employmentCompany')?.value,
+    role,
+    salaryMg: role === 'ceo' ? 0 : +document.getElementById('employmentSalary')?.value
+  }, () => { loadEmployment(); refresh(); });
+});
+
+document.getElementById('employmentCancelAppBtn')?.addEventListener('click', () => doAction('/actions/employment/cancel-application', {}, () => { loadEmployment(); refresh(); }));
 
 document.getElementById('employmentQuitBtn')?.addEventListener('click', () => doAction('/actions/employment/quit', {}, () => { loadEmployment(); refresh(); }));
 

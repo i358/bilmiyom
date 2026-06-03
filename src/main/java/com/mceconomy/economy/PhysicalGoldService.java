@@ -25,22 +25,22 @@ public final class PhysicalGoldService {
 		return total;
 	}
 
-	/** Bankaya yatirilabilir (kayip seri no olmayan) kulce sayisi. */
+	/** Bankaya yatirilabilir: seri no / MB zimmeti olmayan kulce. */
 	public static int countDepositEligibleGoldIngots(ServerPlayer player) {
 		int total = 0;
 		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
 			ItemStack stack = player.getInventory().getItem(slot);
-			if (stack.is(Items.GOLD_INGOT) && !FacilityItemTags.matchesWantedSerial(stack)) {
+			if (stack.is(Items.GOLD_INGOT) && !FacilityItemTags.isBankTrackedGold(stack)) {
 				total += stack.getCount();
 			}
 		}
 		return total;
 	}
 
-	public static boolean hasWantedGoldIngots(ServerPlayer player) {
+	public static boolean hasBankTrackedGoldIngots(ServerPlayer player) {
 		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
 			ItemStack stack = player.getInventory().getItem(slot);
-			if (stack.is(Items.GOLD_INGOT) && FacilityItemTags.matchesWantedSerial(stack)) {
+			if (stack.is(Items.GOLD_INGOT) && FacilityItemTags.isBankTrackedGold(stack)) {
 				return true;
 			}
 		}
@@ -48,8 +48,7 @@ public final class PhysicalGoldService {
 	}
 
 	/**
-	 * Yalnizca kayip seri numarasi tasimayan kulceleri alir.
-	 * {@code removedOut} orijinal etiketleri korur (seri no dahil).
+	 * Yalnizca temiz (zimmet/seri nosuz) kulceleri alir.
 	 */
 	public static boolean removeDepositEligibleGoldIngots(ServerPlayer player, int ingots, List<ItemStack> removedOut) {
 		if (ingots <= 0 || countDepositEligibleGoldIngots(player) < ingots) {
@@ -58,7 +57,7 @@ public final class PhysicalGoldService {
 		int remaining = ingots;
 		for (int slot = 0; slot < player.getInventory().getContainerSize() && remaining > 0; slot++) {
 			ItemStack stack = player.getInventory().getItem(slot);
-			if (!stack.is(Items.GOLD_INGOT) || FacilityItemTags.matchesWantedSerial(stack)) {
+			if (!stack.is(Items.GOLD_INGOT) || FacilityItemTags.isBankTrackedGold(stack)) {
 				continue;
 			}
 			int take = Math.min(stack.getCount(), remaining);

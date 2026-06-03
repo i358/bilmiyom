@@ -13,6 +13,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.network.chat.Component;
 
 import java.sql.SQLException;
+import java.util.UUID;
+
 /** Calisan uretimini erit, pisir, pazara sat veya sirket sandigina koy. */
 public final class CompanyProductPipeline {
 	private final MarketService marketService;
@@ -28,6 +30,11 @@ public final class CompanyProductPipeline {
 
 	public void processDelivery(MinecraftServer server, Company company, String workerName, JobType role,
 			Commodity produced, int quantity) throws SQLException {
+		processDelivery(server, company, workerName, role, produced, quantity, null);
+	}
+
+	public void processDelivery(MinecraftServer server, Company company, String workerName, JobType role,
+			Commodity produced, int quantity, UUID workerUuid) throws SQLException {
 		if (produced == null || quantity <= 0) {
 			return;
 		}
@@ -35,7 +42,7 @@ public final class CompanyProductPipeline {
 		if (CommodityProcessing.isCookable(produced)) {
 			Item cooked = CommodityProcessing.cookedItem(produced).orElseThrow();
 			int stored = companyVaultService.depositItem(company, cooked, quantity);
-			sellOverflow(server, company, workerName, role, cooked, quantity - stored);
+			sellOverflow(server, company, workerName, role, cooked, quantity - stored, workerUuid);
 			notify(server, company, workerName, role,
 					stored + "x pisirilmis " + produced.displayName() + " sirket sandigina kondu");
 			return;
@@ -51,10 +58,10 @@ public final class CompanyProductPipeline {
 
 			if (reserve > 0) {
 				int stored = companyVaultService.depositItem(company, vaultItem, reserve);
-				sellOverflow(server, company, workerName, role, vaultItem, reserve - stored);
+				sellOverflow(server, company, workerName, role, vaultItem, reserve - stored, workerUuid);
 			}
 			if (toSell > 0 && marketCommodity.sellable()) {
-				long revenue = marketService.systemSellForCompany(company, marketCommodity, toSell);
+				long revenue = marketService.systemSellForCompany(company, marketCommodity, toSell, workerUuid);
 				companyManager.saveCompany(company);
 				String smeltNote = CommodityProcessing.isSmeltable(produced) ? " (eritildi)" : "";
 				notify(server, company, workerName, role,
@@ -68,7 +75,7 @@ public final class CompanyProductPipeline {
 		}
 
 		if (marketCommodity.sellable()) {
-			long revenue = marketService.systemSellForCompany(company, marketCommodity, quantity);
+			long revenue = marketService.systemSellForCompany(company, marketCommodity, quantity, workerUuid);
 			companyManager.saveCompany(company);
 			notify(server, company, workerName, role,
 					quantity + "x " + marketCommodity.displayName() + " pazara satildi +"
@@ -86,7 +93,7 @@ public final class CompanyProductPipeline {
 	}
 
 	private void sellOverflow(MinecraftServer server, Company company, String workerName, JobType role,
-			Item item, int overflow) throws SQLException {
+			Item item, int overflow, UUID workerUuid) throws SQLException {
 		if (overflow <= 0) {
 			return;
 		}
@@ -94,7 +101,7 @@ public final class CompanyProductPipeline {
 		if (commodity == null || !commodity.sellable()) {
 			return;
 		}
-		long revenue = marketService.systemSellForCompany(company, commodity, overflow);
+		long revenue = marketService.systemSellForCompany(company, commodity, overflow, workerUuid);
 		companyManager.saveCompany(company);
 		notify(server, company, workerName, role,
 				overflow + "x " + commodity.displayName() + " sandik dolu — otomatik satildi +"
@@ -105,7 +112,7 @@ public final class CompanyProductPipeline {
 		for (Company company : companyManager.allCompanies()) {
 			companyVaultService.liquidateIfFull(company, (item, amount) -> {
 				try {
-					sellOverflow(server, company, "Sistem", JobType.MINER, item, amount);
+					sellOverflow(server, company, "Sistem", JobType.MINER, item, amount, null);
 				} catch (SQLException e) {
 					McEconomyMod.LOGGER.error("Sirket sandik tasfiyesi basarisiz", e);
 				}

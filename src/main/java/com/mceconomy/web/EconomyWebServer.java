@@ -336,6 +336,16 @@ public final class EconomyWebServer {
 			job.addProperty("salary", GoldStandard.formatMilligrams(emp.salaryMg()));
 			data.add("employment", job);
 		});
+		manager.playerEmploymentService().pendingApplicationForPlayer(uuid).ifPresent(app -> {
+			Company company = manager.companyManager().allCompanies().stream()
+					.filter(c -> c.id() == app.companyId()).findFirst().orElse(null);
+			JsonObject pending = new JsonObject();
+			pending.addProperty("company", company != null ? company.name() : "?");
+			pending.addProperty("role", app.roleId());
+			pending.addProperty("salaryMg", app.requestedSalaryMg());
+			pending.addProperty("salary", GoldStandard.formatMilligrams(app.requestedSalaryMg()));
+			data.add("pendingApplication", pending);
+		});
 		sendJson(exchange, 200, data);
 	}
 
@@ -525,6 +535,7 @@ public final class EconomyWebServer {
 			case "launder" -> withOnline(uuid, p -> DashboardActionService.launder(p, displayMcVal(body, 0)));
 			case "employment/apply" -> DashboardActionService.employmentApply(uuid, text(body, "company"),
 					text(body, "role"), longVal(body, "salaryMg", 0));
+			case "employment/cancel-application" -> DashboardActionService.employmentCancelApplication(uuid);
 			case "employment/quit" -> DashboardActionService.employmentQuit(uuid);
 			default -> ActionResult.fail("Bilinmeyen işlem: " + action);
 		};

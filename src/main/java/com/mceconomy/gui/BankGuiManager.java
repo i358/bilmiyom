@@ -354,7 +354,7 @@ public final class BankGuiManager {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_gold"));
 			return;
 		}
-		if (PhysicalGoldService.hasWantedGoldIngots(player)
+		if (PhysicalGoldService.hasBankTrackedGoldIngots(player)
 				&& PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.wanted_gold_deposit"));
 			return;

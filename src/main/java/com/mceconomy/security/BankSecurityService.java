@@ -76,6 +76,7 @@ public final class BankSecurityService {
 	private int nightCloseReserveBlocks = -1;
 	private static final int GUARD_SYNC_RADIUS = 48;
 	private static final int SPAWN_CHECK_INTERVAL_TICKS = 100;
+	private static final int GROUND_SCAN_INTERVAL_TICKS = 40;
 	private static final int SPAWN_COOLDOWN_TICKS = 200;
 
 	private int tickCounter;
@@ -260,6 +261,9 @@ public final class BankSecurityService {
 			if (highAlert && tickCounter % 15 == 0) {
 				guardProximityVolleys();
 			}
+		}
+		if (tickCounter % GROUND_SCAN_INTERVAL_TICKS == 0) {
+			scanInvestigationGroundItems(server.overworld());
 		}
 	}
 
@@ -539,7 +543,7 @@ public final class BankSecurityService {
 				player.sendSystemMessage(Component.literal("§a[UST ARAMA] §fBu tur temiz ciktiniz."));
 			}
 		}
-		int ground = confiscateWantedItemsOnGround(level, manager);
+		int ground = confiscateInvestigationItemsOnGround(level, manager);
 		if (ground > 0) {
 			broadcast("§c[SABAH] §fBanka civarinda yere birakilmis §e" + ground
 					+ " §fadet kayip seri numarali zimmetli esya depoya geri alindi.");
@@ -557,23 +561,30 @@ public final class BankSecurityService {
 		}
 	}
 
-	private int confiscateWantedItemsOnGround(ServerLevel level,
+	private void scanInvestigationGroundItems(ServerLevel level) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null) {
+			return;
+		}
+		int recovered = confiscateInvestigationItemsOnGround(level, manager);
+		if (recovered > 0) {
+			broadcast("§c[Guvenlik] §fBanka bolgesinde yere birakilmis §e" + recovered
+					+ " §fadet zimmetli esya depoya alindi.");
+		}
+	}
+
+	private int confiscateInvestigationItemsOnGround(ServerLevel level,
 			com.mceconomy.economy.EconomyManager manager) {
 		var registry = manager.bankAssetSerialRegistry();
-		AABB bounds = CentralBankPlacer.bankSearchBounds(12);
+		AABB bounds = CentralBankPlacer.bankSearchBounds(16);
 		if (registry == null || !registry.hasActiveInvestigation() || bounds == null) {
 			return 0;
 		}
 		int recovered = 0;
-		for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, bounds)) {
+		for (ItemEntity entity : level.getEntities(EntityTypeTest.forClass(ItemEntity.class),
+				e -> bounds.contains(e.getX(), e.getY(), e.getZ()))) {
 			ItemStack stack = entity.getItem();
-			if (stack.isEmpty() || !registry.isWanted(stack)) {
-				continue;
-			}
-			BlockPos pos = entity.blockPosition();
-			if (!CentralBankPlacer.isInsideBankPerimeter(pos.getX(), pos.getY(), pos.getZ(), 12)
-					&& !CentralBankPlacer.isInsideReserve(pos.getX(), pos.getY(), pos.getZ())
-					&& !CentralBankPlacer.isNearAnyDepot(pos, 8)) {
+			if (stack.isEmpty() || !registry.isGroundRecoverable(stack)) {
 				continue;
 			}
 			ItemStack copy = stack.copy();

@@ -148,7 +148,7 @@ public final class DashboardActionService {
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(uuid).isEmpty()) {
 			return ActionResult.fail("Banka hesabınız yok.");
 		}
-		if (com.mceconomy.economy.PhysicalGoldService.hasWantedGoldIngots(player)
+		if (com.mceconomy.economy.PhysicalGoldService.hasBankTrackedGoldIngots(player)
 				&& com.mceconomy.economy.PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
 			return ActionResult.fail(
 					"Kayıp MB seri numaralı altın bankaya yatırılamaz. Karaborsada eriterek aklayın.");
@@ -1027,6 +1027,17 @@ public final class DashboardActionService {
 			return ActionResult.ok("Sirketten ayrildiniz.");
 		}
 		return ActionResult.fail("Bir sirkette calismiyorsunuz.");
+	}
+
+	public static ActionResult employmentCancelApplication(UUID uuid) {
+		var server = McEconomyMod.getEconomyManager().server();
+		if (server == null) {
+			return ActionResult.fail("Sunucu hazir degil.");
+		}
+		if (McEconomyMod.getEconomyManager().playerEmploymentService().cancelPendingApplication(uuid, server)) {
+			return ActionResult.ok("Is basvurusu geri cekildi.");
+		}
+		return ActionResult.fail("Bekleyen is basvurunuz yok.");
 	}
 
 	public static ActionResult tradeDisputeResolve(String adminName, long disputeId, boolean refund, String note) {

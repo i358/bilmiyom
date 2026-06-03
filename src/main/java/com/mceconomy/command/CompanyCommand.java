@@ -2,6 +2,7 @@ package com.mceconomy.command;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.company.Company;
+import com.mceconomy.company.EmploymentRole;
 import com.mceconomy.company.JobApplication;
 import com.mceconomy.company.NpcEmployee;
 import com.mceconomy.company.PlayerEmployment;
@@ -122,9 +123,12 @@ public final class CompanyCommand {
 							+ "\n  §7" + app.message()), false);
 		}
 		for (PlayerJobApplication app : playerApps) {
+			String roleLabel = EmploymentRole.displayName(app.roleId());
+			String payLabel = EmploymentRole.isCeo(app.roleId())
+					? "kazanc payi %50/%50"
+					: "maas: " + GoldStandard.formatMilligrams(app.requestedSalaryMg());
 			source.sendSuccess(() -> Component.literal(
-					"§6#" + app.id() + " §7[OYUNCU] §f" + app.playerName() + " §7(" + app.roleId() + ") maas: "
-							+ GoldStandard.formatMilligrams(app.requestedSalaryMg())
+					"§6#" + app.id() + " §7[OYUNCU] §f" + app.playerName() + " §7(" + roleLabel + ") " + payLabel
 							+ "\n  §7" + app.message()), false);
 		}
 		source.sendSuccess(() -> Component.literal("§7Kabul: /sirket kabul <id> | Red: /sirket red <id>"), false);
@@ -181,9 +185,12 @@ public final class CompanyCommand {
 							+ " uretim: " + GoldStandard.formatMilligrams(emp.totalProducedMg())), false);
 		}
 		for (PlayerEmployment emp : playerList) {
+			String roleLabel = EmploymentRole.displayName(emp.roleId());
+			String payLabel = EmploymentRole.isCeo(emp.roleId())
+					? "CEO ortak (kazanc yarisi)"
+					: "maas: " + GoldStandard.formatMilligrams(emp.salaryMg()) + " (gunluk)";
 			source.sendSuccess(() -> Component.literal(
-					"§6#" + emp.id() + " §7[OYUNCU] §f" + emp.playerName() + " §7(" + emp.roleId() + ")"
-							+ " maas: " + GoldStandard.formatMilligrams(emp.salaryMg()) + " (gunluk)"), false);
+					"§6#" + emp.id() + " §7[OYUNCU] §f" + emp.playerName() + " §7(" + roleLabel + ") " + payLabel), false);
 		}
 		return 1;
 	}

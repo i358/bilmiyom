@@ -159,6 +159,17 @@ public final class BankAssetSerialRegistry {
 		return serial != null && wantedSerials.contains(serial);
 	}
 
+	/** Yere birakilmis esya: kayip listesi veya aktif sorusturmada MB zimmetli seri no. */
+	public boolean isGroundRecoverable(ItemStack stack) {
+		if (isWanted(stack)) {
+			return true;
+		}
+		if (!hasActiveInvestigation()) {
+			return false;
+		}
+		return FacilityItemTags.isDepotAsset(stack) && FacilityItemTags.getSerial(stack) != null;
+	}
+
 	public Set<UUID> findPlayersHoldingWanted(MinecraftServer server) {
 		Set<UUID> found = new HashSet<>();
 		if (server == null || wantedSerials.isEmpty()) {

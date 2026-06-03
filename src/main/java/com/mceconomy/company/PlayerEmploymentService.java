@@ -80,9 +80,11 @@ public final class PlayerEmploymentService {
 	public Optional<JobType> resolveWorkJobType(UUID playerUuid) {
 		Optional<PlayerEmployment> employment = employmentForPlayer(playerUuid);
 		if (employment.isPresent()) {
-			JobType role = JobType.fromString(employment.get().roleId());
-			if (role != null) {
-				return Optional.of(role);
+			if (!EmploymentRole.isCeo(employment.get().roleId())) {
+				JobType role = JobType.fromString(employment.get().roleId());
+				if (role != null) {
+					return Optional.of(role);
+				}
 			}
 		}
 		PlayerEconomyProfile profile = profiles.get(playerUuid);
@@ -112,23 +114,32 @@ public final class PlayerEmploymentService {
 			return false;
 		}
 		if (pendingApplicationForPlayer(player.getUUID()).isPresent()) {
-			player.sendSystemMessage(Component.literal("§cBekleyen basvurunuz var."));
+			player.sendSystemMessage(Component.literal("§cBekleyen basvurunuz var. §7/is basvuru-iptal"));
 			return false;
 		}
-		JobType role = JobType.fromString(roleId);
-		if (role == null) {
-			player.sendSystemMessage(Component.literal("§cGecersiz rol. Ornek: madenci, ciftci"));
+		boolean ceoApplication = EmploymentRole.isCeo(roleId);
+		JobType role = ceoApplication ? null : JobType.fromString(roleId);
+		if (!ceoApplication && role == null) {
+			player.sendSystemMessage(Component.literal("§cGecersiz rol. Ornek: madenci, ciftci, ceo"));
 			return false;
 		}
-		if (requestedSalaryMg < EconomyConfig.baseNpcSalaryMg()) {
-			player.sendSystemMessage(Component.literal("§cMinimum maas: "
-					+ GoldStandard.formatMilligrams(EconomyConfig.baseNpcSalaryMg())));
-			return false;
-		}
-		long maxSalary = EconomyConfig.baseNpcSalaryMg() + EconomyConfig.maxNpcSalaryBonusMg();
-		if (requestedSalaryMg > maxSalary) {
-			player.sendSystemMessage(Component.literal("§cMaksimum maas: " + GoldStandard.formatMilligrams(maxSalary)));
-			return false;
+		if (ceoApplication) {
+			if (requestedSalaryMg != 0) {
+				player.sendSystemMessage(Component.literal("§cCEO basvurusunda maas belirtilmez (0)."));
+				return false;
+			}
+		} else {
+			if (requestedSalaryMg < EconomyConfig.baseNpcSalaryMg()) {
+				player.sendSystemMessage(Component.literal("§cMinimum maas: "
+						+ GoldStandard.formatMilligrams(EconomyConfig.baseNpcSalaryMg())));
+				return false;
+			}
+			long maxSalary = EconomyConfig.baseNpcSalaryMg() + EconomyConfig.maxNpcSalaryBonusMg();
+			if (requestedSalaryMg > maxSalary) {
+				player.sendSystemMessage(Component.literal("§cMaksimum maas: "
+						+ GoldStandard.formatMilligrams(maxSalary)));
+				return false;
+			}
 		}
 		Optional<Company> companyOpt = companyManager.find(companyName);
 		if (companyOpt.isEmpty()) {
@@ -141,24 +152,38 @@ public final class PlayerEmploymentService {
 			return false;
 		}
 		try {
+			if (ceoApplication && (companyHasCeo(company.id()) || companyHasPendingCeo(company.id()))) {
+				player.sendSystemMessage(Component.literal("§cBu sirketin zaten bir CEO basvurusu veya ortagi var."));
+				return false;
+			}
 			if (repository.countPendingForCompany(company.id()) >= EconomyConfig.maxPendingApplications()) {
 				player.sendSystemMessage(Component.literal("§cBu sirket basvuru limitine ulasti."));
 				return false;
 			}
+			String storedRole = ceoApplication ? EmploymentRole.CEO_ID : role.id();
 			String pitch = message != null && !message.isBlank() ? message
-					: role.displayName() + " olarak calismak istiyorum.";
+					: ceoApplication
+							? "CEO ortagi olmak istiyorum (kazanc yarisi sirket/oyuncu)."
+							: role.displayName() + " olarak calismak istiyorum.";
 			PlayerJobApplication app = PlayerJobApplication.createPending(
-					company.id(), player.getUUID(), player.getName().getString(), role.id(), requestedSalaryMg, pitch);
+					company.id(), player.getUUID(), player.getName().getString(), storedRole, requestedSalaryMg, pitch);
 			repository.saveApplication(app);
 			registerApplication(app);
-			player.sendSystemMessage(Component.literal(
-					"§aBasvuru gonderildi: §f" + company.name() + " §7(" + role.displayName() + ", "
-							+ GoldStandard.formatMilligrams(requestedSalaryMg) + ")"));
+			if (ceoApplication) {
+				player.sendSystemMessage(Component.literal(
+						"§aCEO basvurusu gonderildi: §f" + company.name()
+								+ " §7(kazancin %" + (int) (EmploymentRole.companyProfitShare() * 100)
+								+ "'si sirket, %" + (int) (EmploymentRole.playerProfitShare() * 100) + "'si size)"));
+			} else {
+				player.sendSystemMessage(Component.literal(
+						"§aBasvuru gonderildi: §f" + company.name() + " §7(" + role.displayName() + ", "
+								+ GoldStandard.formatMilligrams(requestedSalaryMg) + ")"));
+			}
 			ServerPlayer owner = server.getPlayerList().getPlayer(company.ownerUuid());
 			if (owner != null) {
 				owner.sendSystemMessage(Component.literal(
 						"§e[Oyuncu Basvurusu] §f" + player.getName().getString() + " ("
-								+ role.displayName() + ") — §7/sirket basvurular"));
+								+ EmploymentRole.displayName(storedRole) + ") — §7/sirket basvurular"));
 			}
 			return true;
 		} catch (SQLException e) {
@@ -212,6 +237,9 @@ public final class PlayerEmploymentService {
 		if (totalEmployeeCount(company.id()) >= EconomyConfig.maxEmployeesPerCompany()) {
 			return false;
 		}
+		if (EmploymentRole.isCeo(app.roleId()) && companyHasCeo(company.id())) {
+			return false;
+		}
 		if (employmentForPlayer(app.playerUuid()).isPresent()) {
 			return false;
 		}
@@ -226,11 +254,20 @@ public final class PlayerEmploymentService {
 			repository.saveEmployment(employment);
 			registerEmployment(employment);
 
-			notifyPlayer(server, app.playerUuid(),
-					"§a" + company.name() + " sirketinde ise alindiniz! Maas: "
-							+ GoldStandard.formatMilligrams(app.requestedSalaryMg())
-							+ " §7(gunluk). §e/gorev al §7— sirket gorevi (uretim sirkete gider)");
-			notifyOwner(server, ownerUuid, app.playerName() + " oyuncu olarak ise alindi.");
+			if (EmploymentRole.isCeo(app.roleId())) {
+				notifyPlayer(server, app.playerUuid(),
+						"§a" + company.name() + " §6CEO ortagi §aoldunuz! Kazancin %"
+								+ (int) (EmploymentRole.playerProfitShare() * 100)
+								+ "'si size, %" + (int) (EmploymentRole.companyProfitShare() * 100)
+								+ "'si sirket kasasina. §e/gorev al §7— kisisel mesleginizle uretin.");
+				notifyOwner(server, ownerUuid, app.playerName() + " CEO ortagi olarak kabul edildi.");
+			} else {
+				notifyPlayer(server, app.playerUuid(),
+						"§a" + company.name() + " sirketinde ise alindiniz! Maas: "
+								+ GoldStandard.formatMilligrams(app.requestedSalaryMg())
+								+ " §7(gunluk). §e/gorev al §7— sirket gorevi (uretim sirkete gider)");
+				notifyOwner(server, ownerUuid, app.playerName() + " oyuncu olarak ise alindi.");
+			}
 			return true;
 		} catch (SQLException e) {
 			McEconomyMod.LOGGER.error("Oyuncu basvurusu kabul edilemedi", e);
@@ -256,6 +293,34 @@ public final class PlayerEmploymentService {
 			return true;
 		} catch (SQLException e) {
 			McEconomyMod.LOGGER.error("Oyuncu basvurusu reddedilemedi", e);
+			return false;
+		}
+	}
+
+	public boolean cancelPendingApplication(UUID playerUuid, MinecraftServer server) {
+		PlayerJobApplication app = pendingApplicationForPlayer(playerUuid).orElse(null);
+		if (app == null) {
+			return false;
+		}
+		Company company = findCompanyById(app.companyId());
+		try {
+			app.setStatus(ApplicationStatus.REJECTED);
+			repository.saveApplication(app);
+			applications.remove(app.id());
+			if (company != null) {
+				removeFromCompanyList(applicationsByCompany, company.id(), app.id());
+				notifyOwner(server, company.ownerUuid(),
+						app.playerName() + " is basvurusunu geri cekti.");
+			}
+			ServerPlayer player = server.getPlayerList().getPlayer(playerUuid);
+			if (player != null) {
+				String companyName = company != null ? company.name() : "?";
+				player.sendSystemMessage(Component.literal(
+						"§eIs basvurunuz geri cekildi: §f" + companyName));
+			}
+			return true;
+		} catch (SQLException e) {
+			McEconomyMod.LOGGER.error("Oyuncu basvurusu iptal edilemedi", e);
 			return false;
 		}
 	}
@@ -312,6 +377,9 @@ public final class PlayerEmploymentService {
 		long interval = EconomyConfig.playerDailySalaryIntervalMs();
 		var guildService = McEconomyMod.getEconomyManager().guildService();
 		for (PlayerEmployment employment : new ArrayList<>(employments.values())) {
+			if (EmploymentRole.isCeo(employment.roleId())) {
+				continue;
+			}
 			if (now - employment.lastPaidAt() < interval) {
 				continue;
 			}
@@ -386,6 +454,31 @@ public final class PlayerEmploymentService {
 
 	private int totalEmployeeCount(int companyId) {
 		return npcWorkforceService.employeeCountForCompany(companyId) + employeeCountForCompany(companyId);
+	}
+
+	private boolean companyHasCeo(int companyId) {
+		for (PlayerEmployment employment : employments.values()) {
+			if (employment.companyId() == companyId && EmploymentRole.isCeo(employment.roleId())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean companyHasPendingCeo(int companyId) {
+		for (PlayerJobApplication app : applications.values()) {
+			if (app.companyId() == companyId && app.status() == ApplicationStatus.PENDING
+					&& EmploymentRole.isCeo(app.roleId())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public boolean isCeoPartner(UUID playerUuid) {
+		return employmentForPlayer(playerUuid)
+				.map(e -> EmploymentRole.isCeo(e.roleId()))
+				.orElse(false);
 	}
 
 	private Company findCompanyById(int id) {

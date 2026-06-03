@@ -4,8 +4,11 @@ import com.mceconomy.McEconomyMod;
 import com.mceconomy.company.Company;
 import com.mceconomy.company.CompanyManager;
 import com.mceconomy.company.CompanyProductPipeline;
+import com.mceconomy.company.CompanyTreasuryHelper;
+import com.mceconomy.company.EmploymentRole;
 import com.mceconomy.company.PlayerEmployment;
 import com.mceconomy.company.PlayerEmploymentService;
+import com.mceconomy.economy.TransactionType;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.market.Commodity;
@@ -82,9 +85,13 @@ public final class QuestManager {
 			Optional<PlayerEmployment> employment = playerEmploymentService.employmentForPlayer(player);
 			if (employment.isPresent()) {
 				companyId = employment.get().companyId();
-				JobType employmentRole = JobType.fromString(employment.get().roleId());
-				if (employmentRole != null) {
-					effectiveRole = employmentRole;
+				if (EmploymentRole.isCeo(employment.get().roleId())) {
+					effectiveRole = playerEmploymentService.resolveWorkJobType(player).orElse(jobType);
+				} else {
+					JobType employmentRole = JobType.fromString(employment.get().roleId());
+					if (employmentRole != null) {
+						effectiveRole = employmentRole;
+					}
 				}
 				Company company = findCompany(companyId);
 				prefix = company != null ? "[Sirket: " + company.name() + "] " : "[Sirket] ";
@@ -190,7 +197,7 @@ public final class QuestManager {
 			try {
 				MinecraftServer server = McEconomyMod.getEconomyManager().server();
 				companyProductPipeline.processDelivery(server, company, player.getName().getString(), role,
-						commodity, quest.required());
+						commodity, quest.required(), player.getUUID());
 				companyManager.saveCompany(company);
 			} catch (SQLException e) {
 				McEconomyMod.LOGGER.error("Sirket gorevi teslimi basarisiz", e);
@@ -206,7 +213,7 @@ public final class QuestManager {
 					int amount = Math.max(1, quest.required() / 2);
 					MinecraftServer server = McEconomyMod.getEconomyManager().server();
 					companyProductPipeline.processDelivery(server, company, player.getName().getString(),
-							role, commodity, amount);
+							role, commodity, amount, player.getUUID());
 					companyManager.saveCompany(company);
 				} catch (SQLException e) {
 					McEconomyMod.LOGGER.error("Sirket av gorevi basarisiz", e);
@@ -214,17 +221,37 @@ public final class QuestManager {
 				}
 			}
 		}
-		long playerPay = (long) (quest.reward() * EconomyConfig.employedQuestPlayerPayShare());
+		boolean ceoPartner = playerEmploymentService != null
+				&& playerEmploymentService.isCeoPartner(player.getUUID());
+		double playerShare = ceoPartner
+				? EmploymentRole.playerProfitShare()
+				: EconomyConfig.employedQuestPlayerPayShare();
+		long playerPay = (long) (quest.reward() * playerShare);
 		if (playerPay > 0) {
 			jobManager.calculateReward(player.getUUID(), playerPay);
+		}
+		if (ceoPartner && quest.reward() > playerPay) {
+			long companyPay = quest.reward() - playerPay;
+			var currency = McEconomyMod.getEconomyManager().currencyService();
+			CompanyTreasuryHelper.creditCompanyOrOwnerDebt(
+					currency, company, companyPay, TransactionType.COMPANY);
+			try {
+				companyManager.saveCompany(company);
+			} catch (SQLException e) {
+				McEconomyMod.LOGGER.error("CEO gorev payi kaydedilemedi", e);
+			}
 		}
 		JobKitService.reclaimKit(player);
 		activeQuests.remove(player.getUUID());
 		notifyCompanyOwner(McEconomyMod.getEconomyManager().server(), company,
 				player.getName().getString() + " sirket gorevini tamamladi: " + quest.title());
-		player.sendSystemMessage(Component.literal(
-				"§a[Sirket Gorevi] §fUretim sirkete aktarildi. Sizin pay: "
-						+ GoldStandard.formatMilligrams(playerPay)));
+		String payMsg = ceoPartner
+				? "§a[Sirket/CEO] §fUretim islendi. Nakit pay (yarisi): "
+						+ GoldStandard.formatMilligrams(playerPay)
+						+ " §7| Sirket kasasi: " + GoldStandard.formatMilligrams(quest.reward() - playerPay)
+				: "§a[Sirket Gorevi] §fUretim sirkete aktarildi. Sizin pay: "
+						+ GoldStandard.formatMilligrams(playerPay);
+		player.sendSystemMessage(Component.literal(payMsg));
 		return true;
 	}
 
@@ -239,10 +266,12 @@ public final class QuestManager {
 		if (playerEmploymentService == null) {
 			return null;
 		}
-		return playerEmploymentService.employmentForPlayer(playerUuid)
-				.filter(e -> e.companyId() == companyId)
-				.map(e -> JobType.fromString(e.roleId()))
-				.orElse(null);
+		Optional<PlayerEmployment> employment = playerEmploymentService.employmentForPlayer(playerUuid)
+				.filter(e -> e.companyId() == companyId);
+		if (employment.isEmpty()) {
+			return null;
+		}
+		return playerEmploymentService.resolveWorkJobType(playerUuid).orElse(null);
 	}
 
 	private Company findCompany(int companyId) {

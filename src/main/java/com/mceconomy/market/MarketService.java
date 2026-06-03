@@ -1,6 +1,8 @@
 package com.mceconomy.market;
 
+import com.mceconomy.company.CeoProfitSplit;
 import com.mceconomy.company.Company;
+import com.mceconomy.company.EmploymentRole;
 import com.mceconomy.company.PlayerEmploymentService;
 import com.mceconomy.facility.FacilityDepotService;
 import com.mceconomy.facility.FacilityItemTags;
@@ -163,6 +165,22 @@ public final class MarketService {
 		if (employment.isEmpty()) {
 			return payout;
 		}
+		if (EmploymentRole.isCeo(employment.get().roleId())) {
+			Company company = companyManager.allCompanies().stream()
+					.filter(c -> c.id() == employment.get().companyId())
+					.findFirst()
+					.orElse(null);
+			if (company == null) {
+				return payout;
+			}
+			CeoProfitSplit.distribute(currencyService, company, player.getUUID(), payout, TransactionType.MARKET_SELL);
+			try {
+				companyManager.saveCompany(company);
+			} catch (java.sql.SQLException e) {
+				com.mceconomy.McEconomyMod.LOGGER.error("CEO market payi kaydedilemedi", e);
+			}
+			return 0;
+		}
 		JobType role = JobType.fromString(employment.get().roleId());
 		if (role == null || !commodity.matchesJob(role)) {
 			return payout;
@@ -239,6 +257,10 @@ public final class MarketService {
 
 	/** NPC uretimi — piyasa fiyatindan sirket kasasina satis (vergi dahil). */
 	public long systemSellForCompany(Company company, Commodity commodity, int quantity) {
+		return systemSellForCompany(company, commodity, quantity, null);
+	}
+
+	public long systemSellForCompany(Company company, Commodity commodity, int quantity, java.util.UUID workerUuid) {
 		if (company == null || !commodity.sellable() || quantity <= 0) {
 			return 0;
 		}
@@ -250,8 +272,16 @@ public final class MarketService {
 		if (payout <= 0) {
 			return 0;
 		}
-		com.mceconomy.company.CompanyTreasuryHelper.creditCompanyOrOwnerDebt(
-				currencyService, company, payout, TransactionType.MARKET_SELL);
+		boolean ceoSplit = workerUuid != null && playerEmploymentService != null
+				&& playerEmploymentService.employmentForPlayer(workerUuid)
+						.filter(e -> e.companyId() == company.id() && EmploymentRole.isCeo(e.roleId()))
+						.isPresent();
+		if (ceoSplit) {
+			CeoProfitSplit.distribute(currencyService, company, workerUuid, payout, TransactionType.MARKET_SELL);
+		} else {
+			com.mceconomy.company.CompanyTreasuryHelper.creditCompanyOrOwnerDebt(
+					currencyService, company, payout, TransactionType.MARKET_SELL);
+		}
 		priceEngine.onSell(commodity, quantity);
 		taxService.collectTax(tax + cityTax);
 		var mcServer = com.mceconomy.McEconomyMod.getEconomyManager().server();

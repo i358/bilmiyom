@@ -89,7 +89,7 @@ public final class BankCommand {
 			return 0;
 		}
 		long mg = GoldStandard.ingotsToMilligrams(ingots);
-		if (com.mceconomy.economy.PhysicalGoldService.hasWantedGoldIngots(player)
+		if (com.mceconomy.economy.PhysicalGoldService.hasBankTrackedGoldIngots(player)
 				&& com.mceconomy.economy.PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
 			source.sendFailure(Messages.tr("command.mceconomy.bank.wanted_gold_deposit"));
 			return 0;

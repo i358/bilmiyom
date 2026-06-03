@@ -155,6 +155,10 @@ public final class BankService {
 		if (account == null || ingots <= 0) {
 			return false;
 		}
+		if (PhysicalGoldService.hasBankTrackedGoldIngots(player)
+				&& PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
+			return false;
+		}
 		if (PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
 			return false;
 		}

@@ -3,6 +3,7 @@ package com.mceconomy.market;
 import com.mceconomy.company.Company;
 import com.mceconomy.company.PlayerEmploymentService;
 import com.mceconomy.facility.FacilityDepotService;
+import com.mceconomy.facility.FacilityItemTags;
 import com.mceconomy.job.JobType;
 import com.mceconomy.facility.FacilityType;
 import com.mceconomy.company.CompanyManager;
@@ -105,15 +106,15 @@ public final class MarketService {
 		}
 
 		int takenFromDepot = deliverFromDepot(player, commodity.item(), quantity);
-		ItemStack stack = new ItemStack(commodity.item(), quantity);
-		if (!player.getInventory().add(stack)) {
-			currencyService.deposit(player.getUUID(), grandTotal, TransactionType.MARKET_BUY);
-			if (takenFromDepot > 0 && depotService != null) {
-				depotService.depositItem((ServerLevel) player.level(), FacilityType.MARKET, commodity.item(), takenFromDepot);
+		int remaining = quantity - takenFromDepot;
+		if (remaining > 0) {
+			ItemStack stack = new ItemStack(commodity.item(), remaining);
+			if (!player.getInventory().add(stack)) {
+				currencyService.deposit(player.getUUID(), grandTotal, TransactionType.MARKET_BUY);
+				returnDepotStacks(player, commodity.item(), takenFromDepot);
+				return false;
 			}
-			return false;
 		}
-
 		priceEngine.onBuy(commodity, quantity);
 		taxService.collectTax(tax + cityTax);
 		return true;
@@ -124,6 +125,10 @@ public final class MarketService {
 			return false;
 		}
 		if (countItems(player, commodity) < quantity) {
+			if (hasWantedCommodity(player, commodity)) {
+				player.sendSystemMessage(Component.literal(
+						"§c[Piyasa] §fKayip MB seri numarali zimmetli esya satilamaz."));
+			}
 			return false;
 		}
 		removeItems(player, commodity, quantity);
@@ -173,7 +178,8 @@ public final class MarketService {
 		if (companyShare <= 0) {
 			return payout;
 		}
-		company.deposit(companyShare);
+		com.mceconomy.company.CompanyTreasuryHelper.creditCompanyOrOwnerDebt(
+				currencyService, company, companyShare, TransactionType.MARKET_SELL);
 		try {
 			companyManager.saveCompany(company);
 		} catch (java.sql.SQLException e) {
@@ -195,18 +201,30 @@ public final class MarketService {
 		int total = 0;
 		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
 			ItemStack stack = player.getInventory().getItem(i);
-			if (stack.is(commodity.item()) && !JobItemTags.isJobLoan(stack)) {
+			if (stack.is(commodity.item()) && !JobItemTags.isJobLoan(stack)
+					&& !FacilityItemTags.matchesWantedSerial(stack)) {
 				total += stack.getCount();
 			}
 		}
 		return total;
 	}
 
+	private static boolean hasWantedCommodity(ServerPlayer player, Commodity commodity) {
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+			ItemStack stack = player.getInventory().getItem(i);
+			if (stack.is(commodity.item()) && FacilityItemTags.matchesWantedSerial(stack)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private int removeItems(ServerPlayer player, Commodity commodity, int quantity) {
 		int remaining = quantity;
 		for (int i = 0; i < player.getInventory().getContainerSize() && remaining > 0; i++) {
 			ItemStack stack = player.getInventory().getItem(i);
-			if (stack.is(commodity.item()) && !JobItemTags.isJobLoan(stack)) {
+			if (stack.is(commodity.item()) && !JobItemTags.isJobLoan(stack)
+					&& !FacilityItemTags.matchesWantedSerial(stack)) {
 				int take = Math.min(stack.getCount(), remaining);
 				stack.shrink(take);
 				remaining -= take;
@@ -232,7 +250,8 @@ public final class MarketService {
 		if (payout <= 0) {
 			return 0;
 		}
-		company.deposit(payout);
+		com.mceconomy.company.CompanyTreasuryHelper.creditCompanyOrOwnerDebt(
+				currencyService, company, payout, TransactionType.MARKET_SELL);
 		priceEngine.onSell(commodity, quantity);
 		taxService.collectTax(tax + cityTax);
 		var mcServer = com.mceconomy.McEconomyMod.getEconomyManager().server();
@@ -246,7 +265,22 @@ public final class MarketService {
 		if (depotService == null) {
 			return 0;
 		}
-		return depotService.withdrawItem((ServerLevel) player.level(), FacilityType.MARKET, item, quantity);
+		int taken = 0;
+		for (ItemStack stack : depotService.withdrawItemStacks(
+				(ServerLevel) player.level(), FacilityType.MARKET, item, quantity)) {
+			if (!player.getInventory().add(stack)) {
+				player.drop(stack, false);
+			}
+			taken += stack.getCount();
+		}
+		return taken;
+	}
+
+	private void returnDepotStacks(ServerPlayer player, net.minecraft.world.item.Item item, int quantity) {
+		if (depotService == null || quantity <= 0) {
+			return;
+		}
+		depotService.depositItem((ServerLevel) player.level(), FacilityType.MARKET, item, quantity);
 	}
 
 	private static void giveItems(ServerPlayer player, net.minecraft.world.item.Item item, int quantity) {

@@ -9,8 +9,13 @@ import com.mceconomy.economy.CurrencyService;
 import com.mceconomy.economy.EconomyManager;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
+import com.mceconomy.facility.FacilityDepotService;
+import com.mceconomy.facility.FacilityType;
+import com.mceconomy.reserve.NationalReserveService;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.Items;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -43,10 +48,13 @@ public final class ForeignInvestorMarketService {
 			manager.ensurePlayer(uuid, INVESTOR_NAMES[i]);
 			long balance = currency.getBalance(uuid);
 			if (balance < seedCapital) {
-				currency.deposit(uuid, seedCapital - balance, TransactionType.DEPOSIT);
+				long added = seedCapital - balance;
+				currency.deposit(uuid, added, TransactionType.DEPOSIT);
+				creditPhysicalGold(manager, added);
 			}
 			investors.add(new Investor(uuid, INVESTOR_NAMES[i]));
 		}
+		reconcilePhysicalBacking(manager);
 		McEconomyMod.LOGGER.info("[Borsa] {} yatirimci NPC aktif", investors.size());
 	}
 
@@ -62,7 +70,7 @@ public final class ForeignInvestorMarketService {
 		for (int i = 0; i < trades; i++) {
 			Investor investor = investors.get(ThreadLocalRandom.current().nextInt(investors.size()));
 			try {
-				ensureCapital(manager.currencyService(), investor);
+				ensureCapital(manager, manager.currencyService(), investor);
 				performRandomTrade(manager, investor);
 			} catch (SQLException e) {
 				McEconomyMod.LOGGER.error("Yatirimci NPC islemi basarisiz", e);
@@ -70,12 +78,14 @@ public final class ForeignInvestorMarketService {
 		}
 	}
 
-	private void ensureCapital(CurrencyService currency, Investor investor) {
+	private void ensureCapital(EconomyManager manager, CurrencyService currency, Investor investor) {
 		long target = EconomyConfig.foreignInvestorCapitalMg();
 		long min = target / 5;
 		long balance = currency.getBalance(investor.uuid());
 		if (balance < min) {
-			currency.deposit(investor.uuid(), target - balance, TransactionType.DEPOSIT);
+			long added = target - balance;
+			currency.deposit(investor.uuid(), added, TransactionType.DEPOSIT);
+			creditPhysicalGold(manager, added);
 		}
 	}
 
@@ -93,7 +103,7 @@ public final class ForeignInvestorMarketService {
 			return;
 		}
 		if (roll < 58 && !exchange.allTokens().isEmpty()) {
-			trySellToken(exchange, investor);
+			trySellToken(manager, exchange, investor);
 			return;
 		}
 		if (roll < 88) {
@@ -113,9 +123,11 @@ public final class ForeignInvestorMarketService {
 		if (amount <= 0) {
 			return;
 		}
+		long cost = token.priceMg() * (long) amount;
 		if (!exchange.buyToken(investor.uuid(), token.symbol(), amount)) {
 			return;
 		}
+		debitPhysicalGold(manager, cost);
 		String kind = isPlayerToken(token) ? "oyuncu coini" : "coin";
 		broadcastTrade(investor.name() + " §a" + amount + "x " + token.symbol() + " §7(" + kind + ") aldi");
 		if (isPlayerToken(token)) {
@@ -123,7 +135,7 @@ public final class ForeignInvestorMarketService {
 		}
 	}
 
-	private void trySellToken(ExchangeService exchange, Investor investor) throws SQLException {
+	private void trySellToken(EconomyManager manager, ExchangeService exchange, Investor investor) throws SQLException {
 		List<ExchangeToken> held = new ArrayList<>();
 		for (ExchangeToken token : exchange.allTokens()) {
 			if (exchange.tokenBalance(investor.uuid(), token) > 0) {
@@ -136,7 +148,9 @@ public final class ForeignInvestorMarketService {
 		ExchangeToken token = held.get(ThreadLocalRandom.current().nextInt(held.size()));
 		int owned = exchange.tokenBalance(investor.uuid(), token);
 		int amount = Math.min(owned, 1 + ThreadLocalRandom.current().nextInt(Math.min(owned, 12)));
+		long payout = token.priceMg() * (long) amount;
 		if (exchange.sellToken(investor.uuid(), token.symbol(), amount)) {
+			creditPhysicalGold(manager, payout);
 			broadcastTrade(investor.name() + " §c" + amount + "x " + token.symbol() + " satti (kar realizasyonu)");
 		}
 	}
@@ -154,9 +168,11 @@ public final class ForeignInvestorMarketService {
 			return;
 		}
 		String ticker = company.ticker() != null ? company.ticker() : company.name();
+		long cost = price * amount;
 		if (!companyManager.buyShares(investor.uuid(), ticker, amount, index)) {
 			return;
 		}
+		debitPhysicalGold(manager, cost);
 		boolean playerCompany = isPlayerCompany(company);
 		broadcastTrade(investor.name() + " §6" + amount + "x " + ticker + " hisse aldi"
 				+ (playerCompany ? " §7(oyuncu sirketi)" : ""));
@@ -181,7 +197,9 @@ public final class ForeignInvestorMarketService {
 		int amount = Math.min(owned, 1 + ThreadLocalRandom.current().nextInt(Math.min(owned, 4)));
 		double index = manager.marketService().economyIndex().calculate();
 		String ticker = company.ticker() != null ? company.ticker() : company.name();
+		long payout = company.sharePrice(index) * amount;
 		if (companyManager.sellShares(investor.uuid(), ticker, amount, index)) {
+			creditPhysicalGold(manager, payout);
 			broadcastTrade(investor.name() + " §e" + amount + "x " + ticker + " hisse satti");
 		}
 	}
@@ -300,6 +318,50 @@ public final class ForeignInvestorMarketService {
 			sb.append(chars.charAt(ThreadLocalRandom.current().nextInt(chars.length())));
 		}
 		return sb.toString();
+	}
+
+	private void creditPhysicalGold(EconomyManager manager, long milligrams) {
+		ServerLevel level = level(manager);
+		FacilityDepotService depot = manager.facilityDepotService();
+		if (level == null || depot == null || milligrams <= 0) {
+			return;
+		}
+		InvestorPhysicalDepotService.creditGold(level, depot, manager.nationalReserveService(),
+				manager.depotLedgerService(), milligrams);
+	}
+
+	private void debitPhysicalGold(EconomyManager manager, long milligrams) {
+		ServerLevel level = level(manager);
+		FacilityDepotService depot = manager.facilityDepotService();
+		if (level == null || depot == null || milligrams <= 0) {
+			return;
+		}
+		InvestorPhysicalDepotService.debitGold(level, depot, manager.depotLedgerService(), milligrams);
+	}
+
+	/** Cuzdan toplami ile sandiktaki altin eslesmesini tamamlar (sunucu acilisi). */
+	private void reconcilePhysicalBacking(EconomyManager manager) {
+		ServerLevel level = level(manager);
+		FacilityDepotService depot = manager.facilityDepotService();
+		if (level == null || depot == null || investors.isEmpty()) {
+			return;
+		}
+		long totalMg = 0;
+		for (Investor investor : investors) {
+			totalMg += manager.currencyService().getBalance(investor.uuid());
+		}
+		int wantedIngots = InvestorPhysicalDepotService.ingotsForMilligrams(totalMg);
+		int inChest = depot.countItem(level, FacilityType.PHYSICAL_GOLD, Items.GOLD_INGOT);
+		if (wantedIngots > inChest) {
+			long perIngot = Math.max(1L, Math.round(GoldStandard.MILLIGRAMS_PER_INGOT * GoldStandard.goldFactor()));
+			long deficitMg = (wantedIngots - inChest) * perIngot;
+			InvestorPhysicalDepotService.creditGold(level, depot, manager.nationalReserveService(),
+					manager.depotLedgerService(), deficitMg);
+		}
+	}
+
+	private static ServerLevel level(EconomyManager manager) {
+		return manager.server() != null ? manager.server().overworld() : null;
 	}
 
 	private void broadcastTrade(String message) {

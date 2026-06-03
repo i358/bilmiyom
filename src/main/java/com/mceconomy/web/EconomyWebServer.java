@@ -453,17 +453,17 @@ public final class EconomyWebServer {
 
 	private ActionResult dispatchPlayerAction(UUID uuid, String action, JsonObject body) {
 		return switch (action) {
-			case "pay" -> DashboardActionService.pay(uuid, text(body, "target"), intVal(body, "grams", 0));
+			case "pay" -> DashboardActionService.pay(uuid, text(body, "target"), displayMcVal(body, 0));
 			case "bank/open-checking" -> DashboardActionService.bankOpenChecking(uuid);
 			case "bank/open-term" -> DashboardActionService.bankOpenTerm(uuid);
-			case "bank/transfer" -> DashboardActionService.bankTransfer(uuid, text(body, "target"), intVal(body, "grams", 0));
-			case "bank/wallet-deposit" -> DashboardActionService.bankWalletDeposit(uuid, intVal(body, "grams", 0));
-			case "bank/wallet-withdraw" -> DashboardActionService.bankWalletWithdraw(uuid, intVal(body, "grams", 0));
+			case "bank/transfer" -> DashboardActionService.bankTransfer(uuid, text(body, "target"), displayMcVal(body, 0));
+			case "bank/wallet-deposit" -> DashboardActionService.bankWalletDeposit(uuid, displayMcVal(body, 0));
+			case "bank/wallet-withdraw" -> DashboardActionService.bankWalletWithdraw(uuid, displayMcVal(body, 0));
 			case "bank/deposit-ingots" -> withOnline(uuid, p -> DashboardActionService.bankDepositIngots(p, intVal(body, "ingots", 0)));
 			case "bank/withdraw-ingots" -> withOnline(uuid, p -> DashboardActionService.bankWithdrawIngots(p, intVal(body, "ingots", 0)));
 			case "market/buy" -> withOnline(uuid, p -> DashboardActionService.marketBuy(p, text(body, "commodity"), intVal(body, "quantity", 0)));
 			case "market/sell" -> withOnline(uuid, p -> DashboardActionService.marketSell(p, text(body, "commodity"), intVal(body, "quantity", 0)));
-			case "loan/take" -> DashboardActionService.loanTake(uuid, intVal(body, "grams", 0));
+			case "loan/take" -> DashboardActionService.loanTake(uuid, displayMcVal(body, 0));
 			case "loan/pay" -> DashboardActionService.loanPay(uuid);
 			case "job/set" -> DashboardActionService.setJob(uuid, text(body, "job"));
 			case "job/resign" -> DashboardActionService.resignJob(uuid);
@@ -482,11 +482,11 @@ public final class EconomyWebServer {
 			case "exchange/list" -> DashboardActionService.listCompany(uuid, text(body, "company"), text(body, "ticker"));
 			case "exchange/delist" -> DashboardActionService.delistCompany(uuid, text(body, "company"));
 			case "exchange/leverage/open" -> DashboardActionService.openLeverage(uuid, text(body, "symbol"),
-					"long".equalsIgnoreCase(text(body, "side")), intVal(body, "leverage", 2), longVal(body, "grams", 0));
+					"long".equalsIgnoreCase(text(body, "side")), intVal(body, "leverage", 2), displayMcVal(body, 0));
 			case "exchange/leverage/close" -> DashboardActionService.closeLeverage(uuid, intVal(body, "positionId", -1));
-			case "casino/play" -> DashboardActionService.casinoPlay(uuid, text(body, "game"), longVal(body, "grams", 0), text(body, "choice"));
+			case "casino/play" -> DashboardActionService.casinoPlay(uuid, text(body, "game"), displayMcVal(body, 0), text(body, "choice"));
 			case "company/employee/fire" -> DashboardActionService.fireEmployee(uuid, longVal(body, "employeeId", -1));
-			case "company/employee/raise" -> DashboardActionService.raiseSalary(uuid, longVal(body, "employeeId", -1), longVal(body, "grams", 0));
+			case "company/employee/raise" -> DashboardActionService.raiseSalary(uuid, longVal(body, "employeeId", -1), displayMcVal(body, 0));
 			case "company/employee/bonus" -> DashboardActionService.payBonus(uuid, text(body, "company"));
 			case "company/stash/collect" -> DashboardActionService.teleportCompanyVault(uuid, text(body, "company"));
 			case "company/vault/teleport" -> DashboardActionService.teleportCompanyVault(uuid, text(body, "company"));
@@ -498,12 +498,12 @@ public final class EconomyWebServer {
 			case "inventory/market-sell" -> withOnline(uuid, p -> DashboardActionService.inventoryMarketSell(
 					p, text(body, "itemId"), intVal(body, "quantity", 0)));
 			case "inventory/blackmarket-list" -> withOnline(uuid, p -> DashboardActionService.inventoryBlackMarketList(
-					p, text(body, "itemId"), intVal(body, "quantity", 0), longVal(body, "grams", 0)));
+					p, text(body, "itemId"), intVal(body, "quantity", 0), displayMcVal(body, 0)));
 			case "heist/start" -> withOnline(uuid, DashboardActionService::startHeist);
 			case "private-bank/certify" -> DashboardActionService.purchaseCert(uuid);
 			case "private-bank/open" -> DashboardActionService.openPrivateBank(uuid, text(body, "name"));
-			case "private-bank/deposit" -> DashboardActionService.privateDeposit(uuid, text(body, "bank"), intVal(body, "grams", 0));
-			case "private-bank/withdraw" -> DashboardActionService.privateWithdraw(uuid, text(body, "bank"), intVal(body, "grams", 0));
+			case "private-bank/deposit" -> DashboardActionService.privateDeposit(uuid, text(body, "bank"), displayMcVal(body, 0));
+			case "private-bank/withdraw" -> DashboardActionService.privateWithdraw(uuid, text(body, "bank"), displayMcVal(body, 0));
 			case "appeal/submit" -> {
 				Long alertId = body.has("alertId") && !body.get("alertId").isJsonNull()
 						? body.get("alertId").getAsLong() : null;
@@ -522,7 +522,7 @@ public final class EconomyWebServer {
 			}
 			case "blackmarket/buy" -> withOnline(uuid, p -> DashboardActionService.blackMarketBuy(p, text(body, "good"), intVal(body, "quantity", 0)));
 			case "blackmarket/sell" -> withOnline(uuid, p -> DashboardActionService.blackMarketSell(p, text(body, "good"), intVal(body, "quantity", 0)));
-			case "launder" -> withOnline(uuid, p -> DashboardActionService.launder(p, intVal(body, "grams", 0)));
+			case "launder" -> withOnline(uuid, p -> DashboardActionService.launder(p, displayMcVal(body, 0)));
 			case "employment/apply" -> DashboardActionService.employmentApply(uuid, text(body, "company"),
 					text(body, "role"), longVal(body, "salaryMg", 0));
 			case "employment/quit" -> DashboardActionService.employmentQuit(uuid);
@@ -550,10 +550,10 @@ public final class EconomyWebServer {
 
 	private ActionResult dispatchAdminAction(String action, JsonObject body, String adminName) {
 		return switch (action) {
-			case "blackmarket/add" -> DashboardActionService.addCustomBlackMarket(text(body, "name"), text(body, "itemId"), longVal(body, "grams", 0));
+			case "blackmarket/add" -> DashboardActionService.addCustomBlackMarket(text(body, "name"), text(body, "itemId"), displayMcVal(body, 0));
 			case "blackmarket/remove" -> DashboardActionService.removeCustomBlackMarket(text(body, "id"));
 			case "masak/resolve" -> DashboardActionService.masakResolve(text(body, "player"));
-			case "masak/fine" -> DashboardActionService.masakFine(text(body, "player"), intVal(body, "grams", 0));
+			case "masak/fine" -> DashboardActionService.masakFine(text(body, "player"), displayMcVal(body, 0));
 			case "masak/blacklist" -> DashboardActionService.masakBlacklist(text(body, "player"));
 			case "event/trigger" -> DashboardActionService.triggerEvent(text(body, "type"),
 					intVal(body, "durationSeconds", 300) * 1000L);
@@ -1546,6 +1546,17 @@ public final class EconomyWebServer {
 	private static long longVal(JsonObject obj, String key, long defaultVal) {
 		if (obj.has(key) && !obj.get(key).isJsonNull()) {
 			return obj.get(key).getAsLong();
+		}
+		return defaultVal;
+	}
+
+	/** Web panelde "Tutar (MC)" — mc veya eski grams anahtari (ikisi de gorunen MC). */
+	private static long displayMcVal(JsonObject obj, long defaultVal) {
+		if (obj.has("mc") && !obj.get("mc").isJsonNull()) {
+			return obj.get("mc").getAsLong();
+		}
+		if (obj.has("grams") && !obj.get("grams").isJsonNull()) {
+			return obj.get("grams").getAsLong();
 		}
 		return defaultVal;
 	}

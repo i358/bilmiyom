@@ -1,7 +1,10 @@
 package com.mceconomy.economy;
 
+import com.mceconomy.McEconomyMod;
+import com.mceconomy.bank.BankService;
 import com.mceconomy.player.PlayerEconomyProfile;
 import com.mceconomy.regulation.MasakService;
+import net.minecraft.network.chat.Component;
 
 import java.util.Map;
 import java.util.UUID;
@@ -10,6 +13,7 @@ public final class CurrencyService {
 	private final Map<UUID, PlayerEconomyProfile> profiles;
 	private final TransactionLedger ledger;
 	private MasakService masakService;
+	private BankService bankService;
 
 	public CurrencyService(Map<UUID, PlayerEconomyProfile> profiles, TransactionLedger ledger) {
 		this.profiles = profiles;
@@ -18,6 +22,10 @@ public final class CurrencyService {
 
 	public void bindMasak(MasakService masakService) {
 		this.masakService = masakService;
+	}
+
+	public void bindBank(BankService bankService) {
+		this.bankService = bankService;
 	}
 
 	public long getBalance(UUID uuid) {
@@ -35,11 +43,39 @@ public final class CurrencyService {
 		if (profile == null || amount <= 0) {
 			return false;
 		}
+		long before = profile.wallet().balance();
 		if (!profile.wallet().deposit(amount)) {
 			return false;
 		}
 		ledger.record(null, uuid, amount, type, null);
+		if (bankService != null) {
+			bankService.sweepCheckingTowardDebt(uuid);
+		}
+		long after = profile.wallet().balance();
+		if (before < 0) {
+			notifyDebtRepayment(uuid, before, after);
+		}
 		return true;
+	}
+
+	private void notifyDebtRepayment(UUID uuid, long before, long after) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || manager.server() == null) {
+			return;
+		}
+		var player = manager.server().getPlayerList().getPlayer(uuid);
+		if (player == null) {
+			return;
+		}
+		long paid = Math.min(-before, after - before);
+		if (after >= 0) {
+			player.sendSystemMessage(Component.literal(
+					"§a[Borc] Borcunuz kapandi. Bakiye: " + GoldStandard.formatMilligrams(after)));
+		} else if (paid > 0) {
+			player.sendSystemMessage(Component.literal(
+					"§e[Borc] Gelirin " + GoldStandard.formatMilligrams(paid)
+							+ " borca yazildi. Kalan: " + GoldStandard.formatMilligrams(-after)));
+		}
 	}
 
 	public boolean depositDirty(UUID uuid, long amount, TransactionType type) {

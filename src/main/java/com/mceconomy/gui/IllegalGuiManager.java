@@ -1,6 +1,7 @@
 package com.mceconomy.gui;
 
 import com.mceconomy.McEconomyMod;
+import com.mceconomy.blackmarket.BlackMarketGoldSmeltService;
 import com.mceconomy.blackmarket.IllegalGood;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.regulation.LaunderingService;
@@ -33,6 +34,11 @@ public final class IllegalGuiManager {
 				"Kara → temiz altın",
 				"Yakalanma riski var!",
 				"Bakiye: " + GoldStandard.formatMilligrams(dirty)));
+		container.setItem(14, GuiItems.button(Items.BLAST_FURNACE,
+				"Altın Erit",
+				"Seri nolu çalıntı külçe",
+				"%2 komisyon, parçacık çıktı",
+				"Yakalanırsa ceza — makro sok yok"));
 		container.setItem(15, GuiItems.button(Items.CROSSBOW,
 				"Kaçak Silahlar",
 				"Ruhsatsiz silahlar",
@@ -59,6 +65,7 @@ public final class IllegalGuiManager {
 			switch (slotId) {
 				case 11 -> openBlackMarket(sp);
 				case 13 -> openLaunderMenu(sp);
+				case 14 -> openGoldSmeltMenu(sp);
 				case 15 -> openWeaponsMarket(sp);
 				case 16 -> sp.sendSystemMessage(Messages.tr("command.mceconomy.dirty.balance",
 						McEconomyMod.getEconomyManager().currencyService().getDirtyBalance(sp.getUUID())));
@@ -153,6 +160,55 @@ public final class IllegalGuiManager {
 					sp.sendSystemMessage(Messages.tr("command.mceconomy.dirty.insufficient"));
 				}
 				openWeaponsMarket(sp);
+			}
+		});
+	}
+
+	public static void openGoldSmeltMenu(ServerPlayer player) {
+		var smelt = McEconomyMod.getEconomyManager().blackMarketGoldSmeltService();
+		if (smelt == null) {
+			player.sendSystemMessage(Component.literal("§c[Karaborsa] Altin eritme kullanilamiyor."));
+			return;
+		}
+		SimpleContainer container = new SimpleContainer(27);
+		BankGuiManager.fillBackgroundPublic(container);
+		int have = smelt.countSmeltableIngots(player);
+		int[] options = {1, 5, 10, 32};
+		for (int i = 0; i < options.length; i++) {
+			int ingots = options[i];
+			int risk = smelt.previewRisk(player.getUUID(), ingots);
+			container.setItem(10 + i, GuiItems.button(Items.GOLD_INGOT,
+					"Erit: " + ingots + " kulce",
+					"Envanter: " + have + " izli kulce",
+					"Risk: %" + risk,
+					"Komisyon: %2 → altin parcacigi"));
+		}
+		container.setItem(SLOT_BACK, GuiItems.backButton());
+		container.setItem(SLOT_CLOSE, GuiItems.closeButton());
+		BankGuiManager.openMenu(player, container, "§4Karaborsa — Altin Erit", (slotId, button, p) -> {
+			if (!(p instanceof ServerPlayer sp)) {
+				return;
+			}
+			if (slotId == SLOT_BACK) {
+				openHub(sp);
+				return;
+			}
+			if (slotId == SLOT_CLOSE) {
+				sp.closeContainer();
+				return;
+			}
+			if (slotId >= 10 && slotId < 10 + options.length) {
+				int ingots = options[slotId - 10];
+				BlackMarketGoldSmeltService.SmeltResult result = smelt.attempt(sp, ingots);
+				switch (result.outcome()) {
+					case SUCCESS -> sp.sendSystemMessage(Component.literal(
+							"§a[Karaborsa] §f" + result.nuggetsOut() + " parcacik alindi (risk %" + result.riskPercent() + ")."));
+					case CAUGHT -> sp.sendSystemMessage(Component.literal(
+							"§c[Karaborsa] §fEritme yakalandi (risk %" + result.riskPercent() + ")."));
+					case INSUFFICIENT -> sp.sendSystemMessage(Component.literal(
+							"§c[Karaborsa] §fYeterli izli altin kulceniz yok."));
+				}
+				openGoldSmeltMenu(sp);
 			}
 		});
 	}

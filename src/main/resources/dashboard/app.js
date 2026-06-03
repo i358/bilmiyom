@@ -499,7 +499,7 @@ document.getElementById('invBmListBtn').onclick = () => {
   doAction('/actions/inventory/blackmarket-list', {
     itemId: selectedInvItem.itemId,
     quantity: +document.getElementById('invQty').value,
-    grams: +document.getElementById('invPrice').value
+    mc: +document.getElementById('invPrice').value
   }, () => { loadInventory(); refresh(); });
 };
 
@@ -547,7 +547,7 @@ async function loadEmployees() {
   box.querySelectorAll('button[data-raise]').forEach(b => b.onclick = () => {
     const val = +document.querySelector(`[data-raise-input="${b.dataset.raise}"]`).value;
     if (!val) { showToast('Yeni maaş girin', false); return; }
-    doAction('/actions/company/employee/raise', { employeeId: +b.dataset.raise, grams: val }, loadEmployees);
+    doAction('/actions/company/employee/raise', { employeeId: +b.dataset.raise, mc: val }, loadEmployees);
   });
   box.querySelectorAll('button[data-bonus]').forEach(b => b.onclick = () =>
     doAction('/actions/company/employee/bonus', { company: b.dataset.bonus }, loadEmployees));
@@ -1054,22 +1054,22 @@ document.getElementById('tokenTradeSelect')?.addEventListener('change', e => {
 setupNav('sidebarNav', 'page-');
 
 document.getElementById('payBtn').onclick = () => doAction('/actions/pay', {
-  target: document.getElementById('payTarget').value, grams: +document.getElementById('payGrams').value
+  target: document.getElementById('payTarget').value, mc: +document.getElementById('payGrams').value
 }, refresh);
 
 document.getElementById('walletToBankBtn').onclick = () => doAction('/actions/bank/wallet-deposit', {
-  grams: +document.getElementById('walletMoveGrams').value
+  mc: +document.getElementById('walletMoveGrams').value
 }, refresh);
 
 document.getElementById('bankToWalletBtn').onclick = () => doAction('/actions/bank/wallet-withdraw', {
-  grams: +document.getElementById('walletMoveGrams').value
+  mc: +document.getElementById('walletMoveGrams').value
 }, refresh);
 
 document.getElementById('openCheckingBtn').onclick = () => doAction('/actions/bank/open-checking', {}, refresh);
 document.getElementById('openTermBtn').onclick = () => doAction('/actions/bank/open-term', {}, refresh);
 
 document.getElementById('bankTransferBtn').onclick = () => doAction('/actions/bank/transfer', {
-  target: document.getElementById('bankTransferTarget').value, grams: +document.getElementById('bankTransferGrams').value
+  target: document.getElementById('bankTransferTarget').value, mc: +document.getElementById('bankTransferGrams').value
 }, refresh);
 
 document.getElementById('depositIngotsBtn').onclick = () => doAction('/actions/bank/deposit-ingots', {
@@ -1089,7 +1089,7 @@ document.getElementById('marketSellBtn').onclick = () => doAction('/actions/mark
 }, refresh);
 
 document.getElementById('loanTakeBtn').onclick = () => doAction('/actions/loan/take', {
-  grams: +document.getElementById('loanGrams').value
+  mc: +document.getElementById('loanGrams').value
 }, refresh);
 
 document.getElementById('loanPayBtn').onclick = () => doAction('/actions/loan/pay', {}, refresh);
@@ -1151,7 +1151,7 @@ document.getElementById('levOpenBtn').onclick = () => doAction('/actions/exchang
   symbol: document.getElementById('levSymbol').value,
   side: document.getElementById('levSide').value,
   leverage: +document.getElementById('levLeverage').value,
-  grams: +document.getElementById('levMargin').value
+  mc: +document.getElementById('levMargin').value
 }, refresh);
 
 document.getElementById('vaultGoBtn').onclick = () => doAction('/actions/vault/teleport', {}, refresh);
@@ -1164,11 +1164,11 @@ document.getElementById('pbankOpenBtn').onclick = () => doAction('/actions/priva
 }, refresh);
 
 document.getElementById('pbankDepositBtn').onclick = () => doAction('/actions/private-bank/deposit', {
-  bank: document.getElementById('pbankSelect').value, grams: +document.getElementById('pbankGrams').value
+  bank: document.getElementById('pbankSelect').value, mc: +document.getElementById('pbankGrams').value
 }, refresh);
 
 document.getElementById('pbankWithdrawBtn').onclick = () => doAction('/actions/private-bank/withdraw', {
-  bank: document.getElementById('pbankSelect').value, grams: +document.getElementById('pbankGrams').value
+  bank: document.getElementById('pbankSelect').value, mc: +document.getElementById('pbankGrams').value
 }, refresh);
 
 document.getElementById('illegalBuyBtn').onclick = () => doAction('/actions/blackmarket/buy', {
@@ -1180,7 +1180,7 @@ document.getElementById('illegalSellBtn').onclick = () => doAction('/actions/bla
 }, refresh);
 
 document.getElementById('launderBtn').onclick = () => doAction('/actions/launder', {
-  grams: +document.getElementById('launderGrams').value
+  mc: +document.getElementById('launderGrams').value
 }, refresh);
 
 document.getElementById('tokenSellAllBtn').onclick = () => doAction('/actions/exchange/token/sell-all', {}, refresh);
@@ -1192,13 +1192,13 @@ function casinoResult(data) {
   refresh();
 }
 document.getElementById('cfBtn').onclick = () => doAction('/actions/casino/play', {
-  game: 'coinflip', grams: +document.getElementById('cfBet').value, choice: document.getElementById('cfChoice').value
+  game: 'coinflip', mc: +document.getElementById('cfBet').value, choice: document.getElementById('cfChoice').value
 }, casinoResult);
 document.getElementById('diceBtn').onclick = () => doAction('/actions/casino/play', {
-  game: 'dice', grams: +document.getElementById('diceBet').value, choice: document.getElementById('diceChoice').value
+  game: 'dice', mc: +document.getElementById('diceBet').value, choice: document.getElementById('diceChoice').value
 }, casinoResult);
 document.getElementById('slotBtn').onclick = () => doAction('/actions/casino/play', {
-  game: 'slot', grams: +document.getElementById('slotBet').value, choice: ''
+  game: 'slot', mc: +document.getElementById('slotBet').value, choice: ''
 }, casinoResult);
 
 document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {

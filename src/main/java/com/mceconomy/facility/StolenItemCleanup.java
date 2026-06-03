@@ -35,8 +35,8 @@ public final class StolenItemCleanup {
 		int cleared = 0;
 		for (int slot = 0; slot < container.getContainerSize(); slot++) {
 			ItemStack stack = container.getItem(slot);
-			if (!stack.isEmpty() && FacilityItemTags.isStolen(stack)) {
-				FacilityItemTags.clearStolen(stack);
+			if (!stack.isEmpty() && (FacilityItemTags.isStolen(stack) || FacilityItemTags.getSerial(stack) != null)) {
+				FacilityItemTags.clearTheftMarks(stack);
 				container.setItem(slot, stack);
 				cleared++;
 			}

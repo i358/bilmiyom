@@ -21,6 +21,7 @@ import com.mceconomy.trade.PlayerTradeService;
 import com.mceconomy.guild.GuildService;
 import com.mceconomy.economy.NpcEconomyActivityService;
 import com.mceconomy.regulation.TaxEvasionService;
+import com.mceconomy.blackmarket.BlackMarketGoldSmeltService;
 import com.mceconomy.blackmarket.BlackMarketService;
 import com.mceconomy.blackmarket.CustomBlackMarketRegistry;
 import com.mceconomy.blackmarket.PlayerBlackMarketRegistry;
@@ -66,6 +67,7 @@ import com.mceconomy.heist.HeistService;
 import com.mceconomy.security.BankSecurityCameraService;
 import com.mceconomy.security.BankSecurityService;
 import com.mceconomy.persistence.repo.SecurityCameraRepository;
+import com.mceconomy.justice.BankAssetSerialRegistry;
 import com.mceconomy.justice.BankRobberyJusticeService;
 import com.mceconomy.justice.PrisonService;
 import com.mceconomy.justice.ReportService;
@@ -112,6 +114,8 @@ public final class EconomyManager {
 	private QuestManager questManager;
 	private MasakService masakService;
 	private BlackMarketService blackMarketService;
+	private BlackMarketGoldSmeltService blackMarketGoldSmeltService;
+	private boolean goldLaunderMacroActive;
 	private CustomBlackMarketRegistry customBlackMarket;
 	private PlayerBlackMarketRegistry playerBlackMarket;
 	private GoldReserveService goldReserveService;
@@ -138,6 +142,7 @@ public final class EconomyManager {
 	private NationalReserveService nationalReserveService;
 	private DepotLedgerService depotLedgerService;
 	private EconomyBulletinService bulletinService;
+	private BankAssetSerialRegistry bankAssetSerialRegistry;
 	private BankRobberyJusticeService bankRobberyJusticeService;
 	private BankSecurityService bankSecurityService;
 	private BankSecurityCameraService securityCameraService;
@@ -172,6 +177,7 @@ public final class EconomyManager {
 			currencyService.bindMasak(masakService);
 			taxService = new TaxService();
 			bankService = new BankService(bankRepository, currencyService);
+			currencyService.bindBank(bankService);
 			bankService.load();
 
 			InterestEngine interestEngine = new InterestEngine();
@@ -253,7 +259,8 @@ public final class EconomyManager {
 			ReportRepository reportRepository = new ReportRepository(database.connection());
 			reportService = new ReportService(reportRepository, profiles);
 			reportService.bindEconomy(currencyService, centralBank);
-			bankRobberyJusticeService = new BankRobberyJusticeService(reportRepository, profiles);
+			bankAssetSerialRegistry = new BankAssetSerialRegistry();
+			bankRobberyJusticeService = new BankRobberyJusticeService(reportRepository, profiles, bankAssetSerialRegistry);
 			PrisonRepository prisonRepository = new PrisonRepository(database.connection());
 			prisonService = new PrisonService(prisonRepository, server);
 			prisonService.load();
@@ -270,6 +277,8 @@ public final class EconomyManager {
 			depotLedgerService.load();
 			EconomyBulletinRepository bulletinRepository = new EconomyBulletinRepository(database.connection());
 			bulletinService = new EconomyBulletinService(bulletinRepository);
+			blackMarketGoldSmeltService = new BlackMarketGoldSmeltService(masakService);
+			blackMarketGoldSmeltService.bindBulletin(bulletinService);
 			InsuranceRepository insuranceRepository = new InsuranceRepository(database.connection());
 			insuranceService = new InsuranceService(insuranceRepository, currencyService, companyManager, centralBank);
 			insuranceService.load();
@@ -431,6 +440,7 @@ public final class EconomyManager {
 		}
 		inflationSystem.update(centralBank, bankService, profiles,
 				marketService.economyIndex(), marketService.priceEngine(), goldReserveService);
+		applyGoldLaunderMacroPressure();
 		auditReserveIntegrity();
 		if (bulletinService != null && goldReserveService != null && server != null) {
 			long walletTotal = profiles.values().stream().mapToLong(p -> p.wallet().balance()).sum();
@@ -794,6 +804,10 @@ public final class EconomyManager {
 		return bulletinService;
 	}
 
+	public BankAssetSerialRegistry bankAssetSerialRegistry() {
+		return bankAssetSerialRegistry;
+	}
+
 	public BankRobberyJusticeService bankRobberyJusticeService() {
 		return bankRobberyJusticeService;
 	}
@@ -817,7 +831,55 @@ public final class EconomyManager {
 	public void onPrisonTick() {
 		if (prisonService != null) {
 			prisonService.tick();
+			prisonService.feedJailedPlayers();
 		}
+	}
+
+	public void onTrackedGoldTick() {
+		if (server == null) {
+			return;
+		}
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			if (!player.isCreative() && !player.isSpectator()) {
+				com.mceconomy.justice.TrackedGoldGuard.enforce(player);
+			}
+		}
+	}
+
+	public void activateGoldLaunderPressure() {
+		goldLaunderMacroActive = true;
+	}
+
+	public boolean goldLaunderMacroActive() {
+		return goldLaunderMacroActive;
+	}
+
+	private void applyGoldLaunderMacroPressure() {
+		if (!goldLaunderMacroActive || goldReserveService == null || server == null) {
+			return;
+		}
+		long walletTotal = profiles.values().stream().mapToLong(p -> p.wallet().balance()).sum();
+		long moneySupply = walletTotal + bankService.totalBankBalance();
+		double coverage = goldReserveService.coverageRatio(moneySupply);
+		double target = EconomyConfig.targetGoldReserveCoverage();
+		if (coverage >= target) {
+			goldLaunderMacroActive = false;
+			return;
+		}
+		centralBank.setInflationRate(Math.min(0.65,
+				centralBank.getInflationRate() + EconomyConfig.launderMacroTickInflation()));
+		centralBank.setBaseRate(Math.min(0.35,
+				centralBank.getBaseRate() + EconomyConfig.launderMacroTickRate()));
+		double bump = 1.0 + EconomyConfig.launderMacroTickInflation() * 0.5;
+		double newFactor = Math.max(1.0, centralBank.getGoldFactor() * bump);
+		centralBank.setGoldFactor(newFactor);
+		GoldStandard.setGoldFactor(newFactor);
+		marketService.priceEngine().setGlobalMultiplier(
+				marketService.priceEngine().globalMultiplier() * (1.0 + EconomyConfig.launderMacroTickInflation() * 0.25));
+	}
+
+	public BlackMarketGoldSmeltService blackMarketGoldSmeltService() {
+		return blackMarketGoldSmeltService;
 	}
 
 	public ReportService reportService() {

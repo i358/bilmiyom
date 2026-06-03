@@ -113,6 +113,24 @@ public final class EconomyBulletinService {
 		publish(server, Category.MACRO, headline, detail, backing, false);
 	}
 
+	/** Basarili karaborsa altin eritme — faiz/enflasyon baskisi (yakalaninca cagrilmaz). */
+	public void applyLaunderingShock(CentralBank centralBank, MarketPriceEngine priceEngine, long launderedValueMg) {
+		if (!applyRobberyShock(centralBank, priceEngine, launderedValueMg, "gold_smelt_launder")) {
+			return;
+		}
+		double extraInflation = EconomyConfig.launderInflationBump();
+		double extraRate = EconomyConfig.launderRateBump();
+		centralBank.setInflationRate(Math.min(0.65, centralBank.getInflationRate() + extraInflation));
+		centralBank.setBaseRate(Math.min(0.35, centralBank.getBaseRate() + extraRate));
+		double goldBump = 1.0 + Math.min(0.25, extraInflation * 1.2);
+		double newGoldFactor = Math.max(1.0, centralBank.getGoldFactor() * goldBump);
+		centralBank.setGoldFactor(newGoldFactor);
+		GoldStandard.setGoldFactor(newGoldFactor);
+		if (priceEngine != null) {
+			priceEngine.setGlobalMultiplier(priceEngine.globalMultiplier() * (1.0 + extraInflation * 0.6));
+		}
+	}
+
 	private boolean applyRobberyShock(CentralBank centralBank, MarketPriceEngine priceEngine,
 			long stolenValueMg, String cooldownKey) {
 		long now = System.currentTimeMillis();

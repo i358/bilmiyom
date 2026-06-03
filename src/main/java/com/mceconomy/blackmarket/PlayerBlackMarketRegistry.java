@@ -147,9 +147,6 @@ public final class PlayerBlackMarketRegistry {
 		}
 		int stolenTake = Math.min(quantity, listing.stolenStock());
 		ItemStack stack = new ItemStack(item, quantity);
-		if (stolenTake > 0) {
-			FacilityItemTags.markStolen(stack);
-		}
 		if (!buyer.getInventory().add(stack)) {
 			currency.depositDirty(buyer.getUUID(), cost, com.mceconomy.economy.TransactionType.BLACK_MARKET_BUY);
 			return false;
@@ -251,7 +248,7 @@ public final class PlayerBlackMarketRegistry {
 		int stolen = 0;
 		for (int i = 0; i < player.getInventory().getContainerSize() && stolen < maxQuantity; i++) {
 			ItemStack stack = player.getInventory().getItem(i);
-			if (stack.is(item) && FacilityItemTags.isStolen(stack)) {
+			if (stack.is(item) && FacilityItemTags.matchesWantedSerial(stack)) {
 				stolen += Math.min(stack.getCount(), maxQuantity - stolen);
 			}
 		}
@@ -262,7 +259,7 @@ public final class PlayerBlackMarketRegistry {
 		int remaining = quantity;
 		for (int i = 0; i < player.getInventory().getContainerSize() && remaining > 0; i++) {
 			ItemStack stack = player.getInventory().getItem(i);
-			if (stack.is(item) && FacilityItemTags.isStolen(stack)) {
+			if (stack.is(item) && FacilityItemTags.matchesWantedSerial(stack)) {
 				int take = Math.min(stack.getCount(), remaining);
 				stack.shrink(take);
 				remaining -= take;

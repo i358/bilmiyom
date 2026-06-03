@@ -195,10 +195,6 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 						"§c[Kasa] §fBu kilitli kasa size ait degil."));
 				return InteractionResult.FAIL;
 			}
-			if (vault != null && vault.ownerUuid().equals(serverPlayer.getUUID())
-					&& manager.bankRobberyJusticeService() != null) {
-				manager.bankRobberyJusticeService().investigateTarget(serverPlayer.getUUID());
-			}
 			if (manager.companyVaultService() != null) {
 				CompanyVault companyVault = manager.companyVaultService().vaultRegionAt(pos.getX(), pos.getY(), pos.getZ());
 				if (companyVault != null && !companyVault.ownerUuid().equals(serverPlayer.getUUID())) {

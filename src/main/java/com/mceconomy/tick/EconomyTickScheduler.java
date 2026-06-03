@@ -48,6 +48,7 @@ public final class EconomyTickScheduler {
 		}
 		if (tickCounter % 40 == 0) {
 			manager.syncHudForOnlinePlayers();
+			manager.onTrackedGoldTick();
 		}
 		if (tickCounter % 600 == 0) {
 			manager.onPriceHistoryTick();

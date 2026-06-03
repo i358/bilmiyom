@@ -296,7 +296,7 @@ public final class NpcWorkforceService {
 			if (role != null) {
 				production = (long) (production * roleProductivity(role));
 			}
-			company.deposit(production);
+			CompanyTreasuryHelper.creditCompanyOrOwnerDebt(currencyService, company, production, TransactionType.COMPANY);
 			employee.addProduction(production);
 
 			long salary = employee.salaryMg();

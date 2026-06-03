@@ -83,8 +83,9 @@ public final class JusticeCommand {
 					player.sendSystemMessage(Component.literal("§e/ihbar <kategori> <mesaj>"));
 					player.sendSystemMessage(Component.literal("§e/ihbar oyuncu <ad> <kategori> <mesaj>"));
 					player.sendSystemMessage(Component.literal(
-					"§7Calinti kisisel kasada + acik ihbar → borc, mal varligi el koyma (§eotomatik§7)"));
-			player.sendSystemMessage(Component.literal("§7Ihbar yoksa supheliye dokunulmaz — OP gerekmez"));
+					"§7Sabah taramasi: yalnizca §ekayip MB seri numarasi§7 eslesen cezalandirilir."));
+			player.sendSystemMessage(Component.literal("§7Gece hirsizlik serbest; sabah depo sayimi yapilir."));
+			player.sendSystemMessage(Component.literal("§e/adalet yeniden <oyuncu> §7(OP) — yanlis ceza/borc temizligi"));
 					player.sendSystemMessage(Component.literal("§e/hapishane durum §7— Hapis durumu"));
 					player.sendSystemMessage(Component.literal("§e/itiraz §7— MASAK itirazi"));
 					return 1;
@@ -94,7 +95,15 @@ public final class JusticeCommand {
 						return 0;
 					}
 					return listReports(ctx.getSource());
-				})));
+				}))
+				.then(literal("yeniden").then(argument("oyuncu", StringArgumentType.word())
+						.executes(ctx -> {
+							if (!Permissions.isServerOp(ctx.getSource())) {
+								ctx.getSource().sendFailure(Component.literal("§cSadece OP."));
+								return 0;
+							}
+							return reevaluate(ctx.getSource(), StringArgumentType.getString(ctx, "oyuncu"));
+						}))));
 	}
 
 	private static int complaint(CommandSourceStack source, String target, String subject, String message) {
@@ -213,6 +222,32 @@ public final class JusticeCommand {
 	private static int prisonHelp(CommandSourceStack source) {
 		source.sendSuccess(() -> Component.literal("§e/hapishane durum §7| §e/hapishane yatir <oyuncu> <dk> <sebep> §7(OP)"), false);
 		return 1;
+	}
+
+	private static int reevaluate(CommandSourceStack source, String target) {
+		UUID uuid = BalanceCommand.findPlayerUuid(target);
+		if (uuid == null) {
+			source.sendFailure(Component.literal("§cOyuncu bulunamadi."));
+			return 0;
+		}
+		var justice = McEconomyMod.getEconomyManager().bankRobberyJusticeService();
+		if (justice == null) {
+			source.sendFailure(Component.literal("§cAdalet servisi hazir degil."));
+			return 0;
+		}
+		try {
+			if (justice.reevaluatePlayer(uuid, true)) {
+				source.sendSuccess(() -> Component.literal(
+						"§a[Adalet] §f" + target + " yeniden degerlendirildi: borc sifirlandi, "
+								+ "seri no/suphe temizlendi. Sabah taramasi bekleniyor."), true);
+				return 1;
+			}
+		} catch (Exception e) {
+			source.sendFailure(Component.literal("§cYeniden degerlendirme basarisiz."));
+			return 0;
+		}
+		source.sendFailure(Component.literal("§cIslem yapilamadi."));
+		return 0;
 	}
 
 	private static String formatMs(long ms) {

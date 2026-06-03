@@ -25,83 +25,111 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
-/** Otomatik tarama + ihbar: calinti esya ve kara para → borc, el koyma. */
+/** Sabah taramasi + seri no eslesmesi; gece aninda ceza yok. */
 public final class BankRobberyJusticeService {
-	public record StolenScan(int itemCount, long estimatedValueMg) {
+	public record StolenScan(int itemCount, long estimatedValueMg, int serialMatches) {
 		public static StolenScan empty() {
-			return new StolenScan(0, 0);
+			return new StolenScan(0, 0, 0);
 		}
 
 		public boolean hasStolen() {
-			return itemCount > 0;
+			return serialMatches > 0;
 		}
 
 		public StolenScan merge(StolenScan other) {
-			return new StolenScan(itemCount + other.itemCount(), estimatedValueMg + other.estimatedValueMg());
+			return new StolenScan(
+					itemCount + other.itemCount(),
+					estimatedValueMg + other.estimatedValueMg(),
+					serialMatches + other.serialMatches());
 		}
 	}
 
 	private final ReportRepository reportRepository;
 	private final Map<UUID, PlayerEconomyProfile> profiles;
+	private final BankAssetSerialRegistry serialRegistry;
 	private final Map<UUID, Long> lastInvestigationMs = new HashMap<>();
 	private final Map<Long, Integer> failedScanCounts = new HashMap<>();
-	private final Map<UUID, Long> suspectUntilMs = new HashMap<>();
+	private final Set<UUID> pendingMorningInvestigation = new HashSet<>();
 
-	public BankRobberyJusticeService(ReportRepository reportRepository, Map<UUID, PlayerEconomyProfile> profiles) {
+	public BankRobberyJusticeService(ReportRepository reportRepository,
+			Map<UUID, PlayerEconomyProfile> profiles,
+			BankAssetSerialRegistry serialRegistry) {
 		this.reportRepository = reportRepository;
 		this.profiles = profiles;
+		this.serialRegistry = serialRegistry;
+	}
+
+	public BankAssetSerialRegistry serialRegistry() {
+		return serialRegistry;
 	}
 
 	public void clearInvestigationState() {
 		lastInvestigationMs.clear();
-		suspectUntilMs.clear();
 		failedScanCounts.clear();
+		pendingMorningInvestigation.clear();
+		serialRegistry.clearAll();
 	}
 
 	public void markSuspect(UUID targetUuid, long durationMs) {
-		if (targetUuid == null) {
-			return;
-		}
-		long until = System.currentTimeMillis() + durationMs;
-		suspectUntilMs.merge(targetUuid, until, Math::max);
+		// Artik tum oyunculari supheli yapmiyoruz — sadece sabah seri no taramasi.
 	}
 
 	public void onBlackMarketFence(UUID seller, long proceedsMg, boolean stolenGoods) {
-		if (seller == null) {
+		if (seller == null || !stolenGoods) {
 			return;
 		}
-		markSuspect(seller, EconomyConfig.bankRobberySuspectDurationMs());
-		if (stolenGoods || proceedsMg >= EconomyConfig.bankRobberyDirtyMinimumMg()) {
-			autoScanPlayer(seller, true);
-		}
+		scheduleMorningInvestigation(seller);
 	}
 
 	public void requestAutoScan(UUID targetUuid) {
-		autoScanPlayer(targetUuid, true);
+		scheduleMorningInvestigation(targetUuid);
+	}
+
+	public void scheduleMorningInvestigation(UUID targetUuid) {
+		if (targetUuid != null) {
+			pendingMorningInvestigation.add(targetUuid);
+		}
 	}
 
 	public void onReportAgainstTarget(UUID targetUuid) {
 		if (targetUuid != null) {
-			investigateTarget(targetUuid);
+			scheduleMorningInvestigation(targetUuid);
 		}
-	}
-
-	private boolean isSuspect(UUID uuid) {
-		Long until = suspectUntilMs.get(uuid);
-		return until != null && System.currentTimeMillis() < until;
 	}
 
 	public void tick(MinecraftServer server) {
-		if (server == null) {
+		if (server == null || !EconomyConfig.bankRobberyJusticeEnabled()) {
 			return;
 		}
-		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			autoScanPlayer(player.getUUID());
+		if (!isDaytime(server)) {
+			return;
+		}
+		if (!serialRegistry.hasActiveInvestigation() && pendingMorningInvestigation.isEmpty()) {
+			try {
+				for (CitizenReport report : reportRepository.loadOpen()) {
+					if (report.targetUuid() != null) {
+						pendingMorningInvestigation.add(report.targetUuid());
+					}
+				}
+			} catch (SQLException e) {
+				McEconomyMod.LOGGER.error("Acik ihbar yuklenemedi", e);
+			}
+			if (pendingMorningInvestigation.isEmpty()) {
+				return;
+			}
+		}
+		Set<UUID> toScan = new HashSet<>(pendingMorningInvestigation);
+		pendingMorningInvestigation.clear();
+		for (UUID targetUuid : toScan) {
+			runInvestigation(targetUuid, false);
 		}
 		try {
 			for (CitizenReport report : reportRepository.loadOpen()) {
@@ -119,58 +147,40 @@ public final class BankRobberyJusticeService {
 		}
 	}
 
-	/** Ihbar beklenmeden cevrimici oyuncu taramasi (rezerv soygunu / kara para). */
-	private void autoScanPlayer(UUID targetUuid) {
-		autoScanPlayer(targetUuid, false);
+	private static boolean isDaytime(MinecraftServer server) {
+		return server.overworld().getSkyDarken() < 4;
 	}
 
-	private void autoScanPlayer(UUID targetUuid, boolean forceCooldownBypass) {
-		if (targetUuid == null || !EconomyConfig.bankRobberyJusticeEnabled()) {
-			return;
-		}
-		long last = lastInvestigationMs.getOrDefault(targetUuid, 0L);
-		if (!forceCooldownBypass
-				&& System.currentTimeMillis() - last < EconomyConfig.bankRobberyInvestigationCooldownMs()) {
+	private void runInvestigation(UUID targetUuid, boolean fromReport) {
+		if (targetUuid == null) {
 			return;
 		}
 		EconomyManager manager = McEconomyMod.getEconomyManager();
-		if (manager == null || manager.vaultService() == null || manager.server() == null) {
+		if (manager == null || manager.server() == null) {
 			return;
 		}
 		if (manager.server().getPlayerList().getPlayer(targetUuid) == null) {
+			pendingMorningInvestigation.add(targetUuid);
 			return;
 		}
 		try {
 			lastInvestigationMs.put(targetUuid, System.currentTimeMillis());
-			StolenScan combined = scanTarget(targetUuid, manager);
-			StolenScan dirtyScan = scanDirtyProceeds(targetUuid, manager);
-			combined = combined.merge(dirtyScan);
-			if (!combined.hasStolen()) {
+			StolenScan scan = scanTarget(targetUuid, manager);
+			if (!scan.hasStolen()) {
 				return;
 			}
-			punishHolder(targetUuid, combined, manager, false);
+			punishHolder(targetUuid, scan, manager, fromReport);
 		} catch (SQLException e) {
-			McEconomyMod.LOGGER.error("Otomatik adalet taramasi basarisiz: {}", targetUuid, e);
+			McEconomyMod.LOGGER.error("Sabah adalet taramasi basarisiz: {}", targetUuid, e);
 		}
-	}
-
-	private StolenScan scanDirtyProceeds(UUID targetUuid, EconomyManager manager) {
-		if (manager.currencyService() == null) {
-			return StolenScan.empty();
-		}
-		long dirty = manager.currencyService().getDirtyBalance(targetUuid);
-		long min = EconomyConfig.bankRobberyDirtyMinimumMg();
-		if (dirty < min) {
-			return StolenScan.empty();
-		}
-		if (!isSuspect(targetUuid)) {
-			return StolenScan.empty();
-		}
-		return new StolenScan(1, dirty);
 	}
 
 	public void investigateTarget(UUID targetUuid) {
 		if (targetUuid == null || !EconomyConfig.bankRobberyJusticeEnabled()) {
+			return;
+		}
+		if (!isDaytime(McEconomyMod.getEconomyManager().server())) {
+			scheduleMorningInvestigation(targetUuid);
 			return;
 		}
 		EconomyManager manager = McEconomyMod.getEconomyManager();
@@ -183,7 +193,6 @@ public final class BankRobberyJusticeService {
 				return;
 			}
 			lastInvestigationMs.put(targetUuid, System.currentTimeMillis());
-
 			StolenScan combined = scanTarget(targetUuid, manager);
 			if (!combined.hasStolen()) {
 				handleFalseTipScans(openReports, manager);
@@ -198,33 +207,54 @@ public final class BankRobberyJusticeService {
 	}
 
 	private StolenScan scanTarget(UUID targetUuid, EconomyManager manager) {
+		if (!serialRegistry.hasActiveInvestigation()) {
+			return StolenScan.empty();
+		}
 		StolenScan vaultScan = scanPersonalVault(manager.vaultService(), targetUuid, manager);
 		StolenScan inventoryScan = scanPlayerInventory(manager.server(), targetUuid, manager);
-		return vaultScan.merge(inventoryScan).merge(scanDirtyProceeds(targetUuid, manager));
+		return vaultScan.merge(inventoryScan);
 	}
 
 	private void punishHolder(UUID targetUuid, StolenScan scan, EconomyManager manager, boolean fromReport)
 			throws SQLException {
-		StolenScan vaultScan = scanPersonalVault(manager.vaultService(), targetUuid, manager);
-		StolenScan inventoryScan = scanPlayerInventory(manager.server(), targetUuid, manager);
-		StolenScan dirtyScan = scanDirtyProceeds(targetUuid, manager);
-
-		long returned = returnStolenFromVault(manager, targetUuid);
-		returned += returnStolenFromInventory(manager, targetUuid);
+		long returned = returnWantedFromVault(manager, targetUuid);
+		returned += returnWantedFromInventory(manager, targetUuid);
 		long stolenValue = Math.max(scan.estimatedValueMg(), returned);
-		if (dirtyScan.hasStolen()) {
-			stolenValue = Math.max(stolenValue, dirtyScan.estimatedValueMg());
-		}
 		long confiscated = manager.seizePlayerAssets(targetUuid);
 		imposeDebt(targetUuid, stolenValue, confiscated);
 		PlayerEconomyProfile profile = profiles.get(targetUuid);
 		if (profile != null) {
 			profile.creditScore().adjust(-40);
 		}
-		String location = buildLocationLabel(vaultScan, inventoryScan, dirtyScan);
-		notifyCaught(targetUuid, stolenValue, confiscated, location, fromReport, manager.server());
-		McEconomyMod.LOGGER.warn("[Adalet] {} — {} banka calintisi yakalandi (ihbar={})",
-				targetUuid, location, fromReport);
+		notifyCaught(targetUuid, stolenValue, confiscated, scan.serialMatches(), fromReport, manager.server());
+		McEconomyMod.LOGGER.warn("[Adalet] {} — {} eslesen seri no (ihbar={})",
+				targetUuid, scan.serialMatches(), fromReport);
+	}
+
+	/** OP: yanlis ceza, borc sifirla, seri no ve suphe temizligi. */
+	public boolean reevaluatePlayer(UUID targetUuid, boolean clearDebt) throws SQLException {
+		EconomyManager manager = McEconomyMod.getEconomyManager();
+		if (manager == null || targetUuid == null) {
+			return false;
+		}
+		pendingMorningInvestigation.remove(targetUuid);
+		lastInvestigationMs.remove(targetUuid);
+		ServerPlayer player = manager.server() != null
+				? manager.server().getPlayerList().getPlayer(targetUuid) : null;
+		if (player != null) {
+			serialRegistry.clearWantedFromContainer(player.getInventory());
+		}
+		Container vault = manager.vaultService() != null && manager.server() != null
+				? manager.vaultService().openChest(targetUuid, manager.server().overworld()) : null;
+		if (vault != null) {
+			serialRegistry.clearWantedFromContainer(vault);
+		}
+		PlayerEconomyProfile profile = profiles.get(targetUuid);
+		if (profile != null && clearDebt && profile.wallet().balance() < 0) {
+			profile.wallet().setBalance(0);
+			manager.playerRepository().save(profile);
+		}
+		return true;
 	}
 
 	private void handleFalseTipScans(List<CitizenReport> openReports, EconomyManager manager) throws SQLException {
@@ -238,7 +268,7 @@ public final class BankRobberyJusticeService {
 			}
 			if (report.reporterUuid() == null || penalty <= 0) {
 				reportRepository.update(report.withStatus(ReportStatus.DISMISSED,
-						"Asilsiz ihbar — calinti bulunamadi", null));
+						"Asilsiz ihbar — kayip seri no eslesmedi", null));
 				failedScanCounts.remove(report.id());
 				continue;
 			}
@@ -265,8 +295,7 @@ public final class BankRobberyJusticeService {
 		ServerPlayer reporter = server.getPlayerList().getPlayer(report.reporterUuid());
 		if (reporter != null) {
 			reporter.sendSystemMessage(Component.literal(
-					"§c[Adalet] §fAsilsiz ihbar tespit edildi. Spam onleme cezasi: "
-							+ GoldStandard.formatMilligrams(penalty)));
+					"§c[Adalet] §fAsilsiz ihbar. Ceza: " + GoldStandard.formatMilligrams(penalty)));
 		}
 	}
 
@@ -296,55 +325,59 @@ public final class BankRobberyJusticeService {
 		MarketPriceEngine priceEngine = manager.marketService().priceEngine();
 		NationalReserveService reserve = manager.nationalReserveService();
 		int count = 0;
+		int serialMatches = 0;
 		long value = 0;
 		for (int slot = 0; slot < container.getContainerSize(); slot++) {
 			ItemStack stack = container.getItem(slot);
-			if (stack.isEmpty() || !FacilityItemTags.isStolen(stack)) {
+			if (stack.isEmpty() || !serialRegistry.isWanted(stack)) {
 				continue;
 			}
 			count += stack.getCount();
+			serialMatches++;
 			if (reserve != null) {
 				value += reserve.estimateItemValueMg(stack.getItem(), stack.getCount(), priceEngine);
 			}
 		}
-		return new StolenScan(count, value);
+		return new StolenScan(count, value, serialMatches);
 	}
 
 	private StolenScan scanInventory(Inventory inventory, EconomyManager manager) {
 		MarketPriceEngine priceEngine = manager.marketService().priceEngine();
 		NationalReserveService reserve = manager.nationalReserveService();
 		int count = 0;
+		int serialMatches = 0;
 		long value = 0;
 		for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
 			ItemStack stack = inventory.getItem(slot);
-			if (stack.isEmpty() || !FacilityItemTags.isStolen(stack)) {
+			if (stack.isEmpty() || !serialRegistry.isWanted(stack)) {
 				continue;
 			}
 			count += stack.getCount();
+			serialMatches++;
 			if (reserve != null) {
 				value += reserve.estimateItemValueMg(stack.getItem(), stack.getCount(), priceEngine);
 			}
 		}
-		return new StolenScan(count, value);
+		return new StolenScan(count, value, serialMatches);
 	}
 
-	private long returnStolenFromVault(EconomyManager manager, UUID owner) throws SQLException {
+	private long returnWantedFromVault(EconomyManager manager, UUID owner) throws SQLException {
 		Container chest = manager.vaultService().openChest(owner, manager.server().overworld());
 		if (chest == null) {
 			return 0;
 		}
-		return returnStolenFromContainer(manager, chest);
+		return returnWantedFromContainer(manager, chest);
 	}
 
-	private long returnStolenFromInventory(EconomyManager manager, UUID owner) throws SQLException {
+	private long returnWantedFromInventory(EconomyManager manager, UUID owner) throws SQLException {
 		ServerPlayer player = manager.server().getPlayerList().getPlayer(owner);
 		if (player == null) {
 			return 0;
 		}
-		return returnStolenFromContainer(manager, player.getInventory());
+		return returnWantedFromContainer(manager, player.getInventory());
 	}
 
-	private long returnStolenFromContainer(EconomyManager manager, Container container) throws SQLException {
+	private long returnWantedFromContainer(EconomyManager manager, Container container) throws SQLException {
 		ServerLevel level = manager.server().overworld();
 		FacilityDepotService depot = manager.facilityDepotService();
 		DepotLedgerService ledger = manager.depotLedgerService();
@@ -353,7 +386,7 @@ public final class BankRobberyJusticeService {
 		long value = 0;
 		for (int slot = 0; slot < container.getContainerSize(); slot++) {
 			ItemStack stack = container.getItem(slot);
-			if (stack.isEmpty() || !FacilityItemTags.isStolen(stack)) {
+			if (stack.isEmpty() || !serialRegistry.isWanted(stack)) {
 				continue;
 			}
 			Item item = stack.getItem();
@@ -362,12 +395,16 @@ public final class BankRobberyJusticeService {
 				value += reserve.estimateItemValueMg(item, amount, priceEngine);
 			}
 			if (depot != null) {
-				FacilityType type = item == Items.GOLD_INGOT ? FacilityType.PHYSICAL_GOLD : FacilityType.MARKET;
-				depot.depositItem(level, type, item, amount);
+				FacilityType type = FacilityItemTags.resolveRecoveryDepot(stack);
+				ItemStack copy = stack.copy();
+				if (depot.deposit(level, type, copy)) {
+					serialRegistry.recoverSerial(FacilityItemTags.getSerial(copy));
+				}
 				if (ledger != null && item == Items.GOLD_INGOT) {
 					ledger.onPhysicalGoldDeposited(amount);
 				}
 			}
+			FacilityItemTags.clearTheftMarks(stack);
 			container.setItem(slot, ItemStack.EMPTY);
 		}
 		if (container instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chestEntity) {
@@ -378,11 +415,11 @@ public final class BankRobberyJusticeService {
 
 	private void imposeDebt(UUID targetUuid, long stolenValueMg, long confiscatedMg) {
 		PlayerEconomyProfile profile = profiles.get(targetUuid);
-		if (profile == null) {
+		if (profile == null || stolenValueMg <= 0) {
 			return;
 		}
 		long debt = Math.max(0, stolenValueMg - confiscatedMg);
-		if (debt <= 0 && stolenValueMg > 0) {
+		if (debt <= 0) {
 			debt = EconomyConfig.bankRobberyMinimumDebtMg();
 		}
 		profile.wallet().setBalance(-debt);
@@ -391,13 +428,13 @@ public final class BankRobberyJusticeService {
 	private void resolveOpenReports(UUID targetUuid, long stolenValueMg, EconomyManager manager) throws SQLException {
 		for (CitizenReport report : reportRepository.loadOpenForTarget(targetUuid)) {
 			reportRepository.update(report.withStatus(ReportStatus.GUILTY,
-					"Banka calintisi (" + GoldStandard.formatMilligrams(stolenValueMg) + ")",
+					"Seri no eslesmesi (" + GoldStandard.formatMilligrams(stolenValueMg) + ")",
 					null));
 			manager.reportService().payTipRewardForReport(report);
 		}
 	}
 
-	private void notifyCaught(UUID targetUuid, long stolenValue, long confiscated, String location,
+	private void notifyCaught(UUID targetUuid, long stolenValue, long confiscated, int serialMatches,
 			boolean fromReport, MinecraftServer server) {
 		if (server == null) {
 			return;
@@ -408,46 +445,27 @@ public final class BankRobberyJusticeService {
 				: Math.max(0, stolenValue - confiscated);
 		if (player != null) {
 			player.sendSystemMessage(Component.literal(
-					"§4§l[MASAK] §cOtomatik denetim: " + location + " banka calintisi bulundu!"));
+					"§4§l[MASAK] §cSabah denetimi: §f" + serialMatches + " kayip seri no eslesti."));
 			player.sendSystemMessage(Component.literal(
-					"§cCalinti iade edildi. Temiz + kara para ve varliklariniza el konuldu. §4Borc: "
+					"§cCalinti iade edildi. Varliklara el konuldu. §4Borc: "
 							+ GoldStandard.formatMilligrams(debt)));
 		}
 		String name = profile != null ? profile.name() : targetUuid.toString();
 		if (managerBulletin(server)) {
 			String headline = fromReport
-					? "IHBAR: BANKA SOYGUNU SUPHELISI " + location.toUpperCase() + " YAKALANDI"
-					: "OTOMATIK TARAMA: BANKA CALINTISI " + location.toUpperCase() + " YAKALANDI";
+					? "IHBAR: BANKA SOYGUNU SERI NO ILE DOGRULANDI"
+					: "SABAH TARAMASI: KAYIP SERI NO YAKALANDI";
 			McEconomyMod.getEconomyManager().bulletinService().publishStorageNotice(server, headline,
-					name + " uzerindeki calinti iade edildi; mal varligina el konuldu, borc yazildi.");
+					name + " uzerinde " + serialMatches + " kayip MB seri numarasi bulundu.");
 		}
 		for (ServerPlayer staff : server.getPlayerList().getPlayers()) {
 			if (server.getPlayerList().isOp(staff.nameAndId())) {
 				staff.sendSystemMessage(Component.literal(
-						"§c[Adalet] §f" + name + " — " + location
-								+ (fromReport ? " (ihbar)" : " (otomatik)") + ". Borc: "
+						"§c[Adalet] §f" + name + " — " + serialMatches + " seri no"
+								+ (fromReport ? " (ihbar)" : " (sabah)") + ". Borc: "
 								+ GoldStandard.formatMilligrams(debt)));
 			}
 		}
-	}
-
-	private static String buildLocationLabel(StolenScan vault, StolenScan inv, StolenScan dirty) {
-		boolean v = vault.hasStolen();
-		boolean i = inv.hasStolen();
-		boolean d = dirty.hasStolen();
-		if (d && (v || i)) {
-			return "kara para + fiziksel calinti";
-		}
-		if (d) {
-			return "kara para (karaborsa)";
-		}
-		if (v && i) {
-			return "kasada ve envanterde";
-		}
-		if (i) {
-			return "envanterde";
-		}
-		return "kisisel kasada";
 	}
 
 	private boolean managerBulletin(MinecraftServer server) {

@@ -2,6 +2,7 @@ package com.mceconomy.security;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.config.EconomyConfig;
+import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.facility.DepotSnapshot;
 import com.mceconomy.facility.FacilityDepotService;
 import com.mceconomy.facility.FacilityItemTags;
@@ -22,6 +23,9 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.damagesource.DamageSources;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.npc.villager.Villager;
@@ -67,6 +71,9 @@ public final class BankSecurityService {
 	private long guardsWakeAtMs;
 	private final Map<FacilityType, Integer> sleepStartHashes = new EnumMap<>(FacilityType.class);
 	private final Map<FacilityType, DepotSnapshot> sleepStartSnapshots = new EnumMap<>(FacilityType.class);
+	private final Map<FacilityType, List<ItemStack>> sleepStartStacks = new EnumMap<>(FacilityType.class);
+	private int nightClosePhysicalIngots = -1;
+	private int nightCloseReserveBlocks = -1;
 	private static final int GUARD_SYNC_RADIUS = 48;
 	private static final int SPAWN_CHECK_INTERVAL_TICKS = 100;
 	private static final int SPAWN_COOLDOWN_TICKS = 200;
@@ -254,9 +261,6 @@ public final class BankSecurityService {
 				guardProximityVolleys();
 			}
 		}
-		if (guardsSleeping && tickCounter % 20 == 0) {
-			trackDepotTheftDuringSleep();
-		}
 	}
 
 	private void updateSleepCycle() {
@@ -282,9 +286,22 @@ public final class BankSecurityService {
 		}
 		sleepMessageSent = true;
 		guardsWakeAtMs = System.currentTimeMillis() + EconomyConfig.bankGuardSleepMinutes() * 60_000L;
+		int stamped = depotService.ensureAllDepotItemsSerialized(level);
+		if (stamped > 0) {
+			McEconomyMod.LOGGER.info("[Depo] Gece oncesi {} yigina MB seri numarasi verildi.", stamped);
+		}
+		sleepStartStacks.clear();
 		for (FacilityType type : FacilityType.values()) {
+			List<ItemStack> stacks = depotService.snapshot(level, type);
 			sleepStartHashes.put(type, depotService.snapshotHash(level, type));
-			sleepStartSnapshots.put(type, DepotSnapshot.fromStacks(depotService.snapshot(level, type)));
+			sleepStartSnapshots.put(type, DepotSnapshot.fromStacks(stacks));
+			sleepStartStacks.put(type, stacks);
+		}
+		if (manager != null) {
+			nightClosePhysicalIngots = depotService.countItem(level, FacilityType.PHYSICAL_GOLD, Items.GOLD_INGOT);
+			if (manager.goldReserveService() != null) {
+				nightCloseReserveBlocks = manager.goldReserveService().countGoldBlocks(level);
+			}
 		}
 		broadcast("§5§l[Gece Vardiyasi] §dMuhafizlar " + EconomyConfig.bankGuardSleepMinutes()
 				+ " dk uyuyor — §fates yok, depo sandiklari acik!");
@@ -321,7 +338,7 @@ public final class BankSecurityService {
 	}
 
 	private void onDawn(ServerLevel level) {
-		boolean loss = false;
+		boolean loss = runMorningGoldLedgerAudit(level);
 		List<DepotSnapshot.ItemFingerprint> allMissing = new ArrayList<>();
 		for (FacilityType type : FacilityType.values()) {
 			DepotSnapshot before = sleepStartSnapshots.get(type);
@@ -339,18 +356,89 @@ public final class BankSecurityService {
 		}
 		if (loss) {
 			long stolenValue = estimateMissingValue(allMissing);
+			if (stolenValue <= 0) {
+				stolenValue = estimateNightCloseLoss(level);
+			}
 			publishDepotRobberyBulletin(level, stolenValue);
-			runCityWideSearch(level, allMissing);
 			var manager = McEconomyMod.getEconomyManager();
-			if (manager != null && manager.bankRobberyJusticeService() != null) {
-				for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-					manager.bankRobberyJusticeService().markSuspect(player.getUUID(),
-							EconomyConfig.bankRobberySuspectDurationMs());
-					manager.bankRobberyJusticeService().requestAutoScan(player.getUUID());
+			if (manager != null && manager.bankAssetSerialRegistry() != null) {
+				List<ItemStack> before = new ArrayList<>();
+				List<ItemStack> after = new ArrayList<>();
+				for (FacilityType type : FacilityType.values()) {
+					before.addAll(sleepStartStacks.getOrDefault(type, List.of()));
+					after.addAll(depotService.snapshot(level, type));
+				}
+				manager.bankAssetSerialRegistry().registerMissingBetween(before, after);
+				if (manager.bankRobberyJusticeService() != null) {
+					for (UUID uuid : manager.bankAssetSerialRegistry().findPlayersHoldingWanted(server)) {
+						manager.bankRobberyJusticeService().scheduleMorningInvestigation(uuid);
+					}
 				}
 			}
 		}
+		runMorningWantedSerialInvestigation(level);
+		sleepStartStacks.clear();
+		nightClosePhysicalIngots = -1;
+		nightCloseReserveBlocks = -1;
 		endGuardSleep(level);
+	}
+
+	/** Gece kapanis sayimi ile sabah envanteri — hash kacirirsa bile eksikligi yakalar. */
+	private boolean runMorningGoldLedgerAudit(ServerLevel level) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null) {
+			return false;
+		}
+		boolean loss = false;
+		int actualIngots = depotService.countItem(level, FacilityType.PHYSICAL_GOLD, Items.GOLD_INGOT);
+		if (nightClosePhysicalIngots >= 0 && actualIngots < nightClosePhysicalIngots) {
+			loss = true;
+			int missing = nightClosePhysicalIngots - actualIngots;
+			broadcast("§4[SABAH SAYIM] §cFiziksel altin kasasinda §f" + missing + " §ckulce eksik!");
+		}
+		if (manager.depotLedgerService() != null) {
+			int ledgerDeficit = manager.depotLedgerService().physicalGoldDeficit(actualIngots);
+			if (ledgerDeficit > 0) {
+				loss = true;
+				broadcast("§4[SABAH SAYIM] §cDefter kaydina gore altin kasasinda §f" + ledgerDeficit + " §ckulce acigi.");
+			}
+		}
+		if (manager.goldReserveService() != null) {
+			int actualBlocks = manager.goldReserveService().countGoldBlocks(level);
+			if (nightCloseReserveBlocks >= 0 && actualBlocks < nightCloseReserveBlocks) {
+				loss = true;
+				int missingBlocks = nightCloseReserveBlocks - actualBlocks;
+				broadcast("§4[SABAH SAYIM] §cAltin rezervinde §f" + missingBlocks + " §cblok eksik!");
+			}
+			if (manager.depotLedgerService() != null) {
+				int blockDeficit = manager.depotLedgerService().goldReserveDeficit(actualBlocks);
+				if (blockDeficit > 0) {
+					loss = true;
+					broadcast("§4[SABAH SAYIM] §cRezerv defterinde §f" + blockDeficit + " §cblok acigi.");
+				}
+			}
+		}
+		return loss;
+	}
+
+	private long estimateNightCloseLoss(ServerLevel level) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null) {
+			return 0;
+		}
+		long total = 0;
+		int actualIngots = depotService.countItem(level, FacilityType.PHYSICAL_GOLD, Items.GOLD_INGOT);
+		if (nightClosePhysicalIngots >= 0 && actualIngots < nightClosePhysicalIngots) {
+			total += GoldStandard.ingotsToMilligrams(nightClosePhysicalIngots - actualIngots);
+		}
+		if (manager.goldReserveService() != null && nightCloseReserveBlocks >= 0) {
+			int actualBlocks = manager.goldReserveService().cachedGoldBlocks();
+			if (actualBlocks < nightCloseReserveBlocks) {
+				total += GoldStandard.ingotsToMilligrams(
+						(nightCloseReserveBlocks - actualBlocks) * com.mceconomy.reserve.GoldReserveService.INGOTS_PER_GOLD_BLOCK);
+			}
+		}
+		return total;
 	}
 
 	private long estimateMissingValue(List<DepotSnapshot.ItemFingerprint> missing) {
@@ -383,26 +471,61 @@ public final class BankSecurityService {
 				stolenValue);
 	}
 
-	private void runCityWideSearch(ServerLevel level, List<DepotSnapshot.ItemFingerprint> missingItems) {
+	private void runMorningWantedSerialInvestigation(ServerLevel level) {
 		var manager = McEconomyMod.getEconomyManager();
-		if (manager == null) {
+		if (manager == null || manager.bankAssetSerialRegistry() == null) {
+			return;
+		}
+		var registry = manager.bankAssetSerialRegistry();
+		if (!registry.hasActiveInvestigation()) {
+			return;
+		}
+		if (registry.isInvestigationExpired()) {
+			int abandoned = registry.abandonInvestigation();
+			broadcast("§e[SABAH] §f" + abandoned + " kayip MB seri numarasi icin "
+					+ EconomyConfig.wantedSerialSearchDays()
+					+ " Minecraft gunu sabah aramasi yapildi — bulunamadi, sorusturma kapatildi.");
+			broadcast("§7[Adalet] §fBu esyalar artik kayip listesinde degil (zimmet izi kalabilir).");
+			return;
+		}
+		runCityWideSearch(level);
+		registry.recordMorningSearch();
+		if (manager.bankRobberyJusticeService() != null) {
+			for (UUID uuid : registry.findPlayersHoldingWanted(server)) {
+				manager.bankRobberyJusticeService().scheduleMorningInvestigation(uuid);
+			}
+		}
+	}
+
+	private void runCityWideSearch(ServerLevel level) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || manager.bankAssetSerialRegistry() == null) {
+			return;
+		}
+		var registry = manager.bankAssetSerialRegistry();
+		if (!registry.hasActiveInvestigation()) {
 			return;
 		}
 		int prisonMin = EconomyConfig.theftPrisonMinutes();
-		broadcast("§c§lTUM SEHIRDE UST ARAMA BASLATILDI — kimse guvenli degil!");
-		broadcast("§7MASAK ve muhafizlar her oyuncuyu tarayacak...");
+		int day = registry.getInvestigationDayIndex();
+		int maxDays = EconomyConfig.wantedSerialSearchDays();
+		broadcast("§c§lSABAH UST ARAMASI §7(Minecraft Gun " + day + "/" + maxDays + ") §c— "
+				+ registry.wantedCount() + " kayip MB seri numarali zimmetli esya araniyor.");
 		int caught = 0;
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			if (player.isCreative() || player.isSpectator()) {
 				continue;
 			}
 			player.sendSystemMessage(Component.literal(
-					"§4§l[UST ARAMA] §cPolis sizi durdurdu ve envanterinizi ariyor!"));
+					"§4§l[UST ARAMA] §cKayip seri numarali zimmetli esya kontrolu (altin, demir, piyasa vb.)!"));
 			List<ItemStack> confiscated = new ArrayList<>();
-			if (confiscateStolen(player, confiscated) || confiscateMissing(player, missingItems, confiscated)) {
+			if (confiscateWantedSerials(player, manager, confiscated)) {
 				caught++;
 				for (ItemStack stack : confiscated) {
-					depotService.deposit(level, FacilityType.MARKET, stack);
+					FacilityType depot = FacilityItemTags.resolveRecoveryDepot(stack);
+					if (depotService.deposit(level, depot, stack)) {
+						registry.recoverSerial(FacilityItemTags.getSerial(stack));
+					}
 				}
 				try {
 					manager.prisonService().imprison(player, prisonMin,
@@ -416,68 +539,67 @@ public final class BankSecurityService {
 				player.sendSystemMessage(Component.literal("§a[UST ARAMA] §fBu tur temiz ciktiniz."));
 			}
 		}
-		if (caught == 0) {
-			broadcast("§e[SABAH RAPORU] §fUst arama tamamlandi — supheli yakalanmadi, sorusturma suruyor.");
-		} else {
+		int ground = confiscateWantedItemsOnGround(level, manager);
+		if (ground > 0) {
+			broadcast("§c[SABAH] §fBanka civarinda yere birakilmis §e" + ground
+					+ " §fadet kayip seri numarali zimmetli esya depoya geri alindi.");
+		}
+		if (caught == 0 && ground == 0) {
+			int morningsLeft = registry.morningsRemainingAfterSearch();
+			if (morningsLeft > 0) {
+				broadcast("§e[SABAH RAPORU] §fBu tur yakalanmadi — sonraki Minecraft gunu sabahi tekrar aranacak ("
+						+ morningsLeft + " sabah kaldi).");
+			} else {
+				broadcast("§e[SABAH RAPORU] §fSon Minecraft gunu aramasi — supheli yakalanmadi.");
+			}
+		} else if (caught > 0) {
 			broadcast("§c[SABAH RAPORU] §f" + caught + " kisi ust aramada yakalandi ve hapse gonderildi.");
 		}
 	}
 
-	private boolean confiscateStolen(ServerPlayer player, List<ItemStack> out) {
+	private int confiscateWantedItemsOnGround(ServerLevel level,
+			com.mceconomy.economy.EconomyManager manager) {
+		var registry = manager.bankAssetSerialRegistry();
+		AABB bounds = CentralBankPlacer.bankSearchBounds(12);
+		if (registry == null || !registry.hasActiveInvestigation() || bounds == null) {
+			return 0;
+		}
+		int recovered = 0;
+		for (ItemEntity entity : level.getEntitiesOfClass(ItemEntity.class, bounds)) {
+			ItemStack stack = entity.getItem();
+			if (stack.isEmpty() || !registry.isWanted(stack)) {
+				continue;
+			}
+			BlockPos pos = entity.blockPosition();
+			if (!CentralBankPlacer.isInsideBankPerimeter(pos.getX(), pos.getY(), pos.getZ(), 12)
+					&& !CentralBankPlacer.isInsideReserve(pos.getX(), pos.getY(), pos.getZ())
+					&& !CentralBankPlacer.isNearAnyDepot(pos, 8)) {
+				continue;
+			}
+			ItemStack copy = stack.copy();
+			FacilityType depot = FacilityItemTags.resolveRecoveryDepot(copy);
+			if (depotService.deposit(level, depot, copy)) {
+				registry.recoverSerial(FacilityItemTags.getSerial(copy));
+				recovered += stack.getCount();
+				entity.discard();
+			}
+		}
+		return recovered;
+	}
+
+	private boolean confiscateWantedSerials(ServerPlayer player,
+			com.mceconomy.economy.EconomyManager manager, List<ItemStack> out) {
+		var registry = manager.bankAssetSerialRegistry();
 		boolean found = false;
 		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
 			ItemStack stack = player.getInventory().getItem(slot);
-			if (FacilityItemTags.isStolen(stack)) {
+			if (registry.isWanted(stack)) {
 				out.add(stack.copy());
 				player.getInventory().setItem(slot, ItemStack.EMPTY);
 				found = true;
 			}
 		}
 		return found;
-	}
-
-	private boolean confiscateMissing(ServerPlayer player, List<DepotSnapshot.ItemFingerprint> missing,
-			List<ItemStack> out) {
-		if (missing.isEmpty()) {
-			return false;
-		}
-		boolean found = false;
-		for (DepotSnapshot.ItemFingerprint fp : missing) {
-			Item item = BuiltInRegistries.ITEM.getValue(Identifier.tryParse(fp.itemId()));
-			if (item == null) {
-				continue;
-			}
-			int toFind = fp.count();
-			for (int slot = 0; slot < player.getInventory().getContainerSize() && toFind > 0; slot++) {
-				ItemStack stack = player.getInventory().getItem(slot);
-				if (!stack.is(item)) {
-					continue;
-				}
-				int take = Math.min(stack.getCount(), toFind);
-				out.add(stack.copyWithCount(take));
-				stack.shrink(take);
-				if (stack.isEmpty()) {
-					player.getInventory().setItem(slot, ItemStack.EMPTY);
-				}
-				toFind -= take;
-				found = true;
-			}
-		}
-		return found;
-	}
-
-	private void trackDepotTheftDuringSleep() {
-		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			if (!CentralBankPlacer.isNearAnyDepot(player.blockPosition(), 6)) {
-				continue;
-			}
-			for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
-				ItemStack stack = player.getInventory().getItem(i);
-				if (!stack.isEmpty()) {
-					FacilityItemTags.markStolen(stack);
-				}
-			}
-		}
 	}
 
 	/**
@@ -502,8 +624,12 @@ public final class BankSecurityService {
 	}
 
 	private static boolean hasStolenGoods(ServerPlayer player) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || manager.bankAssetSerialRegistry() == null) {
+			return false;
+		}
 		for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
-			if (FacilityItemTags.isStolen(player.getInventory().getItem(slot))) {
+			if (manager.bankAssetSerialRegistry().isWanted(player.getInventory().getItem(slot))) {
 				return true;
 			}
 		}

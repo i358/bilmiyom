@@ -22,6 +22,38 @@ public final class FacilityDepotService {
 	public static int maxCapacity(FacilityType type) {
 		return CHEST_SLOTS * STACK_SIZE;
 	}
+	/** Gece oncesi: sandiktaki tum yiginlara MB seri numarasi (demir, bugday, altin vb.). */
+	public int ensureAllDepotItemsSerialized(ServerLevel level) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || manager.bankAssetSerialRegistry() == null) {
+			return 0;
+		}
+		var registry = manager.bankAssetSerialRegistry();
+		int stamped = 0;
+		for (FacilityType type : FacilityType.values()) {
+			Container container = containerAt(level, type);
+			if (container == null) {
+				continue;
+			}
+			for (int slot = 0; slot < container.getContainerSize(); slot++) {
+				ItemStack stack = container.getItem(slot);
+				if (stack.isEmpty()) {
+					continue;
+				}
+				if (FacilityItemTags.getSerial(stack) == null) {
+					registry.assignSerial(stack, type);
+					stamped++;
+				} else {
+					FacilityItemTags.markDepot(stack, type);
+				}
+				FacilityItemTags.applySerialDisplayName(stack);
+				container.setItem(slot, stack);
+			}
+			markChestChanged(container);
+		}
+		return stamped;
+	}
+
 	public boolean deposit(ServerLevel level, FacilityType type, ItemStack stack) {
 		if (stack.isEmpty()) {
 			return true;
@@ -31,7 +63,12 @@ public final class FacilityDepotService {
 			return false;
 		}
 		ItemStack copy = stack.copy();
-		FacilityItemTags.markDepot(copy, type);
+		var manager = com.mceconomy.McEconomyMod.getEconomyManager();
+		if (manager != null && manager.bankAssetSerialRegistry() != null) {
+			manager.bankAssetSerialRegistry().assignSerial(copy, type);
+		} else {
+			FacilityItemTags.markDepot(copy, type);
+		}
 		return insert(container, copy);
 	}
 
@@ -46,10 +83,46 @@ public final class FacilityDepotService {
 		return 0;
 	}
 
+	/** Altin depodan seri numarali yiginlar halinde ceker. */
+	public java.util.List<ItemStack> withdrawGoldIngots(ServerLevel level, int quantity) {
+		java.util.List<ItemStack> out = new ArrayList<>();
+		if (quantity <= 0) {
+			return out;
+		}
+		Container container = containerAt(level, FacilityType.PHYSICAL_GOLD);
+		if (container == null) {
+			return out;
+		}
+		int taken = 0;
+		for (int slot = 0; slot < container.getContainerSize() && taken < quantity; slot++) {
+			ItemStack stack = container.getItem(slot);
+			if (stack.isEmpty() || !stack.is(net.minecraft.world.item.Items.GOLD_INGOT)) {
+				continue;
+			}
+			int remove = Math.min(stack.getCount(), quantity - taken);
+			ItemStack withdrawn = stack.split(remove);
+			container.setItem(slot, stack);
+			FacilityItemTags.applySerialDisplayName(withdrawn);
+			out.add(withdrawn);
+			taken += remove;
+		}
+		return out;
+	}
+
 	public int withdrawItem(ServerLevel level, FacilityType type, Item item, int quantity) {
+		int taken = 0;
+		for (ItemStack stack : withdrawItemStacks(level, type, item, quantity)) {
+			taken += stack.getCount();
+		}
+		return taken;
+	}
+
+	/** Seri numarali depo yiginlarini koruyarak ceker. */
+	public List<ItemStack> withdrawItemStacks(ServerLevel level, FacilityType type, Item item, int quantity) {
+		List<ItemStack> out = new ArrayList<>();
 		Container container = containerAt(level, type);
 		if (container == null || quantity <= 0) {
-			return 0;
+			return out;
 		}
 		int taken = 0;
 		for (int slot = 0; slot < container.getContainerSize() && taken < quantity; slot++) {
@@ -58,11 +131,14 @@ public final class FacilityDepotService {
 				continue;
 			}
 			int remove = Math.min(stack.getCount(), quantity - taken);
-			stack.shrink(remove);
+			ItemStack withdrawn = stack.split(remove);
 			container.setItem(slot, stack);
+			FacilityItemTags.applySerialDisplayName(withdrawn);
+			out.add(withdrawn);
 			taken += remove;
 		}
-		return taken;
+		markChestChanged(container);
+		return out;
 	}
 
 	public int countItem(ServerLevel level, FacilityType type, Item item) {
@@ -159,6 +235,12 @@ public final class FacilityDepotService {
 			}
 		}
 		return remaining == 0;
+	}
+
+	private static void markChestChanged(Container container) {
+		if (container instanceof ChestBlockEntity chestEntity) {
+			chestEntity.setChanged();
+		}
 	}
 
 	private static Container containerAt(ServerLevel level, FacilityType type) {

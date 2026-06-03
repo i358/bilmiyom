@@ -149,7 +149,8 @@ public final class InsuranceService {
 				Company company = companyManager.allCompanies().stream()
 						.filter(c -> c.id() == policy.companyId()).findFirst().orElse(null);
 				if (company != null) {
-					company.deposit(payout);
+					com.mceconomy.company.CompanyTreasuryHelper.creditCompanyOrOwnerDebt(
+							currencyService, company, payout, TransactionType.COMPANY);
 					try {
 						companyManager.saveCompany(company);
 					} catch (SQLException e) {

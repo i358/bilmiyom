@@ -198,6 +198,11 @@ public final class EconomyConfig {
 		return data.spawnBankOffsetZ;
 	}
 
+	/** Yer yuzeyinin uzerinde MB platformu (blok). */
+	public static int centralBankElevationBlocks() {
+		return data.centralBankElevationBlocks;
+	}
+
 	public static boolean masakEnabled() {
 		return data.masakEnabled;
 	}
@@ -378,6 +383,38 @@ public final class EconomyConfig {
 		return data.robberyRateBump;
 	}
 
+	public static double blackMarketSmeltCommission() {
+		return data.blackMarketSmeltCommission;
+	}
+
+	public static double goldSmeltBaseRisk() {
+		return data.goldSmeltBaseRisk;
+	}
+
+	public static double goldSmeltRiskPer100Grams() {
+		return data.goldSmeltRiskPer100Grams;
+	}
+
+	public static int goldSmeltCaughtPrisonMinutes() {
+		return data.goldSmeltCaughtPrisonMinutes;
+	}
+
+	public static double launderInflationBump() {
+		return data.launderInflationBump;
+	}
+
+	public static double launderRateBump() {
+		return data.launderRateBump;
+	}
+
+	public static double launderMacroTickInflation() {
+		return data.launderMacroTickInflation;
+	}
+
+	public static double launderMacroTickRate() {
+		return data.launderMacroTickRate;
+	}
+
 	public static long robberyShockCooldownMs() {
 		return data.robberyShockCooldownMs;
 	}
@@ -392,6 +429,11 @@ public final class EconomyConfig {
 
 	public static long bankRobberyMinimumDebtMg() {
 		return data.bankRobberyMinimumDebtMg;
+	}
+
+	/** Kayip MB seri numarali esya sabah ust aramasi kac Minecraft gunu surer. */
+	public static int wantedSerialSearchDays() {
+		return Math.max(1, data.wantedSerialSearchDays);
 	}
 
 	public static long falseTipPenaltyMg() {
@@ -560,6 +602,7 @@ public final class EconomyConfig {
 		public double targetGoldReserveCoverage = 0.08;
 		public int spawnBankOffsetX = 24;
 		public int spawnBankOffsetZ = 0;
+		public int centralBankElevationBlocks = 36;
 		public boolean masakEnabled = true;
 		public long masakTransferWindowMs = 600_000;
 		public int masakMaxTransfersInWindow = 5;
@@ -609,11 +652,20 @@ public final class EconomyConfig {
 		public int depotArchiveBulletinMinItems = 128;
 		public long robberyShockReferenceMg = 50_000_000;
 		public double robberyInflationBump = 0.04;
+		public double blackMarketSmeltCommission = 0.02;
+		public double goldSmeltBaseRisk = 0.08;
+		public double goldSmeltRiskPer100Grams = 0.04;
+		public int goldSmeltCaughtPrisonMinutes = 8;
+		public double launderInflationBump = 0.06;
+		public double launderRateBump = 0.012;
+		public double launderMacroTickInflation = 0.008;
+		public double launderMacroTickRate = 0.003;
 		public double robberyRateBump = 0.015;
 		public long robberyShockCooldownMs = 600_000;
 		public boolean bankRobberyJusticeEnabled = true;
 		public long bankRobberyInvestigationCooldownMs = 60_000;
 		public long bankRobberyMinimumDebtMg = 1_000_000;
+		public int wantedSerialSearchDays = 3;
 		public long falseTipPenaltyMg = 150_000;
 		public int falseTipScanThreshold = 3;
 		public long insurancePersonalPremiumMg = 500_000;

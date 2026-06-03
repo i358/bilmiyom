@@ -15,6 +15,7 @@ import net.minecraft.world.entity.npc.villager.VillagerProfession;
 import net.minecraft.world.entity.npc.villager.VillagerType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.RailShape;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.level.levelgen.Heightmap;
 
@@ -22,6 +23,7 @@ public final class CentralBankPlacer {
 	private static final int BANK_WIDTH = 19;
 	private static final int BANK_DEPTH = 11;
 	private static final int BANK_HEIGHT = 6;
+	private static final int RAIL_APPROACH_LENGTH = 42;
 	public static final String NPC_TAG = "mceconomy_bank_teller";
 	public static final String MASAK_NPC_TAG = "mceconomy_masak_officer";
 	public static final String EXCHANGE_NPC_TAG = "mceconomy_exchange_broker";
@@ -101,6 +103,15 @@ public final class CentralBankPlacer {
 			}
 		}
 		return false;
+	}
+
+	public static net.minecraft.world.phys.AABB bankSearchBounds(int expand) {
+		if (bankMin == null || bankMax == null) {
+			return null;
+		}
+		return new net.minecraft.world.phys.AABB(
+				bankMin.getX() - expand, bankMin.getY() - 2, bankMin.getZ() - expand,
+				bankMax.getX() + expand + 1, bankMax.getY() + expand + 2, bankMax.getZ() + expand + 1);
 	}
 
 	public static boolean isInsideBankPerimeter(double x, double y, double z, int expand) {
@@ -195,6 +206,7 @@ public final class CentralBankPlacer {
 		if (origin == null) {
 			return;
 		}
+		clearRailApproach(level, origin);
 		BlockState air = Blocks.AIR.defaultBlockState();
 		for (int x = -2; x <= BANK_WIDTH + 2; x++) {
 			for (int z = -2; z <= BANK_DEPTH + 2; z++) {
@@ -260,13 +272,19 @@ public final class CentralBankPlacer {
 	}
 
 	private static BlockPos computeBuildOrigin(ServerLevel level) {
+		int x;
+		int z;
 		if (EconomyConfig.bankOriginStored()) {
-			return new BlockPos(
-					EconomyConfig.bankOriginX(), EconomyConfig.bankOriginY(), EconomyConfig.bankOriginZ());
+			x = EconomyConfig.bankOriginX();
+			z = EconomyConfig.bankOriginZ();
+		} else {
+			BlockPos spawn = level.getRespawnData().pos()
+					.offset(EconomyConfig.spawnBankOffsetX(), 0, EconomyConfig.spawnBankOffsetZ());
+			BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, spawn);
+			x = surface.getX() - 9;
+			z = surface.getZ() - 4;
 		}
-		BlockPos spawn = level.getRespawnData().pos().offset(EconomyConfig.spawnBankOffsetX(), 0, EconomyConfig.spawnBankOffsetZ());
-		BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, spawn);
-		return surface.offset(-9, 0, -4);
+		return new BlockPos(x, resolvePlatformY(level, x, z), z);
 	}
 
 	private static BlockPos computeOriginNearPlayer(net.minecraft.server.level.ServerPlayer player) {
@@ -278,7 +296,14 @@ public final class CentralBankPlacer {
 			dz = 1;
 		}
 		BlockPos front = feet.offset(dx * 4, 0, dz * 4);
-		return new BlockPos(front.getX() - 9, feet.getY(), front.getZ() - 4);
+		int x = front.getX() - 9;
+		int z = front.getZ() - 4;
+		return new BlockPos(x, resolvePlatformY((ServerLevel) player.level(), x, z), z);
+	}
+
+	private static int resolvePlatformY(ServerLevel level, int x, int z) {
+		BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, new BlockPos(x, 0, z));
+		return surface.getY() + EconomyConfig.centralBankElevationBlocks();
 	}
 
 	private static void build(MinecraftServer server) {
@@ -289,7 +314,9 @@ public final class CentralBankPlacer {
 	private static void buildAt(ServerLevel level, BlockPos origin) {
 		clearBuiltStructure(level, origin);
 
+		buildElevatedSupports(level, origin);
 		buildGrandStructure(level, origin);
+		buildRailApproach(level, origin);
 		BlockPos vaultCenter = origin.offset(14, 1, 7);
 		buildGoldReserve(level, vaultCenter);
 		buildFacilityDepots(level, origin);
@@ -305,6 +332,82 @@ public final class CentralBankPlacer {
 		EconomyConfig.setSpawnBankBuilt(true);
 		EconomyConfig.save();
 		McEconomyMod.LOGGER.info("Merkez Bankasi (genisletilmis) kuruldu: {}", origin);
+	}
+
+	/** Platform altinda yalnizca hava olan yerlere destek kolonlari. */
+	private static void buildElevatedSupports(ServerLevel level, BlockPos origin) {
+		BlockState pillar = Blocks.QUARTZ_PILLAR.defaultBlockState();
+		BlockPos groundRef = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE,
+				new BlockPos(origin.getX() + 9, 0, origin.getZ() + 5));
+		int groundY = groundRef.getY();
+		for (int x = 0; x < BANK_WIDTH; x += 4) {
+			for (int z = 0; z < BANK_DEPTH; z += 4) {
+				BlockPos top = origin.offset(x, -1, z);
+				for (int y = top.getY() - 1; y > groundY; y--) {
+					BlockPos col = new BlockPos(top.getX(), y, top.getZ());
+					if (level.getBlockState(col).isAir()) {
+						setIfClear(level, col, pillar);
+					} else {
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	private static void clearRailApproach(ServerLevel level, BlockPos origin) {
+		int railX = origin.getX() + 9;
+		int endZ = origin.getZ();
+		int startZ = endZ - RAIL_APPROACH_LENGTH;
+		BlockPos groundRef = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE,
+				new BlockPos(railX, 0, startZ));
+		int startY = groundRef.getY() + 1;
+		int endY = origin.getY();
+		BlockState air = Blocks.AIR.defaultBlockState();
+		for (int step = 0; step <= RAIL_APPROACH_LENGTH; step++) {
+			int z = startZ + step;
+			int y = startY + (step * Math.max(1, endY - startY)) / RAIL_APPROACH_LENGTH;
+			for (int dx = -2; dx <= 2; dx++) {
+				for (int dy = -1; dy <= 3; dy++) {
+					level.setBlockAndUpdate(new BlockPos(railX + dx, y + dy, z), air);
+				}
+			}
+		}
+	}
+
+	private static void buildRailApproach(ServerLevel level, BlockPos origin) {
+		int railX = origin.getX() + 9;
+		int endZ = origin.getZ();
+		int startZ = endZ - RAIL_APPROACH_LENGTH;
+		BlockPos groundRef = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE,
+				new BlockPos(railX, 0, startZ));
+		int startY = groundRef.getY() + 1;
+		int endY = origin.getY();
+		BlockState plank = Blocks.OAK_PLANKS.defaultBlockState();
+		BlockState fence = Blocks.OAK_FENCE.defaultBlockState();
+		BlockState power = Blocks.REDSTONE_BLOCK.defaultBlockState();
+		BlockState rail = Blocks.POWERED_RAIL.defaultBlockState()
+				.setValue(net.minecraft.world.level.block.PoweredRailBlock.SHAPE, RailShape.NORTH_SOUTH);
+
+		for (int step = 0; step <= RAIL_APPROACH_LENGTH; step++) {
+			int z = startZ + step;
+			int y = startY + (step * Math.max(1, endY - startY)) / RAIL_APPROACH_LENGTH;
+			setIfClear(level, new BlockPos(railX - 1, y, z), plank);
+			setIfClear(level, new BlockPos(railX + 1, y, z), plank);
+			setIfClear(level, new BlockPos(railX - 1, y + 1, z), fence);
+			setIfClear(level, new BlockPos(railX + 1, y + 1, z), fence);
+			setIfClear(level, new BlockPos(railX, y - 1, z), power);
+			setIfClear(level, new BlockPos(railX, y, z), rail);
+		}
+		setIfClear(level, new BlockPos(railX, startY - 1, startZ), Blocks.LECTERN.defaultBlockState());
+		setIfClear(level, new BlockPos(railX, startY, startZ), Blocks.OAK_BUTTON.defaultBlockState());
+	}
+
+	private static void setIfClear(ServerLevel level, BlockPos pos, BlockState state) {
+		BlockState existing = level.getBlockState(pos);
+		if (existing.isAir() || existing.canBeReplaced()) {
+			level.setBlockAndUpdate(pos, state);
+		}
 	}
 
 	private static void buildGrandStructure(ServerLevel level, BlockPos origin) {

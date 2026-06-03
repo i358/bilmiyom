@@ -21,6 +21,14 @@ public final class DashboardActionService {
 	private DashboardActionService() {
 	}
 
+	/** Web paneldeki "Tutar (MC)" alanlarini dahili mg birimine cevirir. */
+	private static long mgForDisplayMc(long displayMc) {
+		if (displayMc <= 0) {
+			return 0;
+		}
+		return GoldStandard.milligramsForDisplayMc(displayMc);
+	}
+
 	public record ActionResult(boolean success, String message, JsonObject data) {
 		public static ActionResult ok(String message) {
 			return new ActionResult(true, message, null);
@@ -45,7 +53,7 @@ public final class DashboardActionService {
 		}
 	}
 
-	public static ActionResult pay(UUID from, String targetName, int grams) {
+	public static ActionResult pay(UUID from, String targetName, long displayMc) {
 		var manager = McEconomyMod.getEconomyManager();
 		PlayerEconomyProfile fromProfile = manager.profiles().get(from);
 		if (fromProfile != null && !fromProfile.canUseLegalEconomy()) {
@@ -55,7 +63,10 @@ public final class DashboardActionService {
 		if (target == null) {
 			return ActionResult.fail("Oyuncu bulunamadı.");
 		}
-		long mg = GoldStandard.gramsToMilligrams(grams);
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
 		if (!manager.currencyService().transfer(from, target, mg)) {
 			return ActionResult.fail("Yetersiz bakiye.");
 		}
@@ -86,7 +97,7 @@ public final class DashboardActionService {
 		}
 	}
 
-	public static ActionResult bankTransfer(UUID from, String targetName, int grams) {
+	public static ActionResult bankTransfer(UUID from, String targetName, long displayMc) {
 		UUID target = BalanceCommand.findPlayerUuid(targetName);
 		if (target == null) {
 			return ActionResult.fail("Oyuncu bulunamadı.");
@@ -94,31 +105,40 @@ public final class DashboardActionService {
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(from).isEmpty()) {
 			return ActionResult.fail("Banka hesabınız yok.");
 		}
-		long mg = GoldStandard.gramsToMilligrams(grams);
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
 		if (McEconomyMod.getEconomyManager().bankService().transferFromBank(from, target, mg)) {
 			return ActionResult.ok("Banka transferi başarılı.");
 		}
 		return ActionResult.fail("Yetersiz banka bakiyesi.");
 	}
 
-	public static ActionResult bankWalletDeposit(UUID uuid, int grams) {
+	public static ActionResult bankWalletDeposit(UUID uuid, long displayMc) {
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(uuid).isEmpty()) {
 			return ActionResult.fail("Banka hesabınız yok.");
 		}
-		long mg = GoldStandard.gramsToMilligrams(grams);
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
 		if (McEconomyMod.getEconomyManager().bankService().depositToBank(uuid, mg)) {
-			return ActionResult.ok("Cüzdandan bankaya yatırıldı.");
+			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " bankaya yatırıldı.");
 		}
 		return ActionResult.fail("Yetersiz cüzdan bakiyesi.");
 	}
 
-	public static ActionResult bankWalletWithdraw(UUID uuid, int grams) {
+	public static ActionResult bankWalletWithdraw(UUID uuid, long displayMc) {
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(uuid).isEmpty()) {
 			return ActionResult.fail("Banka hesabınız yok.");
 		}
-		long mg = GoldStandard.gramsToMilligrams(grams);
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
 		if (McEconomyMod.getEconomyManager().bankService().withdrawFromBank(uuid, mg)) {
-			return ActionResult.ok("Bankadan cüzdana çekildi.");
+			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " cüzdana çekildi.");
 		}
 		return ActionResult.fail("Yetersiz banka bakiyesi.");
 	}
@@ -127,6 +147,11 @@ public final class DashboardActionService {
 		UUID uuid = player.getUUID();
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(uuid).isEmpty()) {
 			return ActionResult.fail("Banka hesabınız yok.");
+		}
+		if (com.mceconomy.economy.PhysicalGoldService.hasWantedGoldIngots(player)
+				&& com.mceconomy.economy.PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
+			return ActionResult.fail(
+					"Kayıp MB seri numaralı altın bankaya yatırılamaz. Karaborsada eriterek aklayın.");
 		}
 		if (McEconomyMod.getEconomyManager().bankService().depositPhysicalGold(uuid, player, ingots)) {
 			return ActionResult.ok(ingots + " altın külçe yatırıldı.");
@@ -177,13 +202,16 @@ public final class DashboardActionService {
 		return ActionResult.fail("Envanterde yeterli eşya yok.");
 	}
 
-	public static ActionResult loanTake(UUID uuid, int grams) {
+	public static ActionResult loanTake(UUID uuid, long displayMc) {
 		PlayerEconomyProfile profile = McEconomyMod.getEconomyManager().profiles().get(uuid);
 		if (profile == null) {
 			return ActionResult.fail("Profil bulunamadı.");
 		}
 		try {
-			long mg = GoldStandard.gramsToMilligrams(grams);
+			long mg = mgForDisplayMc(displayMc);
+			if (mg <= 0) {
+				return ActionResult.fail("Geçersiz tutar.");
+			}
 			if (McEconomyMod.getEconomyManager().loanManager().takeLoan(profile, mg,
 					McEconomyMod.getEconomyManager().centralBank())) {
 				var loan = McEconomyMod.getEconomyManager().loanManager().getLoan(uuid).orElseThrow();
@@ -379,9 +407,13 @@ public final class DashboardActionService {
 		return ActionResult.fail("Calisan bulunamadi veya yetkiniz yok.");
 	}
 
-	public static ActionResult raiseSalary(UUID uuid, long employeeId, long grams) {
-		if (McEconomyMod.getEconomyManager().workforceService().raiseSalary(uuid, employeeId, grams * 1000L)) {
-			return ActionResult.ok("Maas guncellendi: " + com.mceconomy.economy.GoldStandard.formatMilligrams(grams * 1000L));
+	public static ActionResult raiseSalary(UUID uuid, long employeeId, long displayMc) {
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
+		if (McEconomyMod.getEconomyManager().workforceService().raiseSalary(uuid, employeeId, mg)) {
+			return ActionResult.ok("Maas guncellendi: " + GoldStandard.formatMilligrams(mg));
 		}
 		return ActionResult.fail("Maas guncellenemedi.");
 	}
@@ -441,8 +473,11 @@ public final class DashboardActionService {
 		return ActionResult.fail("Basvuru reddedilemedi.");
 	}
 
-	public static ActionResult casinoPlay(UUID uuid, String game, long grams, String choice) {
-		long betMg = grams * 1000L;
+	public static ActionResult casinoPlay(UUID uuid, String game, long displayMc, String choice) {
+		long betMg = mgForDisplayMc(displayMc);
+		if (betMg <= 0) {
+			return ActionResult.fail("Geçersiz bahis.");
+		}
 		var result = McEconomyMod.getEconomyManager().casinoService().play(uuid, game, betMg, choice);
 		if (!result.success()) {
 			return ActionResult.fail(result.message());
@@ -577,8 +612,11 @@ public final class DashboardActionService {
 		return ActionResult.fail("Envanterde yeterli item yok.");
 	}
 
-	public static ActionResult inventoryBlackMarketList(ServerPlayer player, String itemId, int quantity, long grams) {
-		long priceMg = grams * 1000L;
+	public static ActionResult inventoryBlackMarketList(ServerPlayer player, String itemId, int quantity, long displayMc) {
+		long priceMg = mgForDisplayMc(displayMc);
+		if (priceMg <= 0) {
+			return ActionResult.fail("Geçersiz fiyat.");
+		}
 		var listing = McEconomyMod.getEconomyManager().playerBlackMarket()
 				.createListing(player, itemId, quantity, priceMg);
 		if (listing.isPresent()) {
@@ -588,8 +626,11 @@ public final class DashboardActionService {
 		return ActionResult.fail("Envanterde yeterli item yok veya gecersiz item.");
 	}
 
-	public static ActionResult openLeverage(UUID uuid, String symbol, boolean isLong, int leverage, long grams) {
-		long marginMg = grams * 1000L;
+	public static ActionResult openLeverage(UUID uuid, String symbol, boolean isLong, int leverage, long displayMc) {
+		long marginMg = mgForDisplayMc(displayMc);
+		if (marginMg <= 0) {
+			return ActionResult.fail("Geçersiz teminat.");
+		}
 		String result = McEconomyMod.getEconomyManager().leverageService()
 				.openPosition(uuid, symbol, isLong, leverage, marginMg);
 		boolean ok = result.startsWith("ACILDI");
@@ -645,9 +686,12 @@ public final class DashboardActionService {
 		return ActionResult.fail("Banka açılamadı.");
 	}
 
-	public static ActionResult privateDeposit(UUID uuid, String bankName, int grams) {
+	public static ActionResult privateDeposit(UUID uuid, String bankName, long displayMc) {
 		try {
-			long mg = GoldStandard.gramsToMilligrams(grams);
+			long mg = mgForDisplayMc(displayMc);
+			if (mg <= 0) {
+				return ActionResult.fail("Geçersiz tutar.");
+			}
 			if (McEconomyMod.getEconomyManager().privateBankService().deposit(uuid, bankName, mg)) {
 				return ActionResult.ok("Özel bankaya yatırıldı.");
 			}
@@ -657,9 +701,12 @@ public final class DashboardActionService {
 		return ActionResult.fail("Yetersiz bakiye veya geçersiz banka.");
 	}
 
-	public static ActionResult privateWithdraw(UUID uuid, String bankName, int grams) {
+	public static ActionResult privateWithdraw(UUID uuid, String bankName, long displayMc) {
 		try {
-			long mg = GoldStandard.gramsToMilligrams(grams);
+			long mg = mgForDisplayMc(displayMc);
+			if (mg <= 0) {
+				return ActionResult.fail("Geçersiz tutar.");
+			}
 			if (McEconomyMod.getEconomyManager().privateBankService().withdraw(uuid, bankName, mg)) {
 				return ActionResult.ok("Özel bankadan çekildi.");
 			}
@@ -837,11 +884,12 @@ public final class DashboardActionService {
 		return ActionResult.fail("Envanterde yeterli eşya yok.");
 	}
 
-	public static ActionResult addCustomBlackMarket(String name, String itemId, long grams) {
-		if (name == null || name.isBlank() || itemId == null || itemId.isBlank() || grams <= 0) {
+	public static ActionResult addCustomBlackMarket(String name, String itemId, long displayMc) {
+		long priceMg = mgForDisplayMc(displayMc);
+		if (name == null || name.isBlank() || itemId == null || itemId.isBlank() || priceMg <= 0) {
 			return ActionResult.fail("Geçerli isim, item id ve fiyat girin.");
 		}
-		var good = McEconomyMod.getEconomyManager().customBlackMarket().add(name, itemId, grams * 1000L);
+		var good = McEconomyMod.getEconomyManager().customBlackMarket().add(name, itemId, priceMg);
 		if (good == null) {
 			return ActionResult.fail("Geçersiz item id: " + itemId + " (örn: minecraft:diamond)");
 		}
@@ -855,8 +903,11 @@ public final class DashboardActionService {
 		return ActionResult.fail("Ürün bulunamadı.");
 	}
 
-	public static ActionResult launder(ServerPlayer player, int grams) {
-		long mg = GoldStandard.gramsToMilligrams(grams);
+	public static ActionResult launder(ServerPlayer player, long displayMc) {
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
 		LaunderingService.LaunderResult result = McEconomyMod.getEconomyManager().launderingService().attempt(player, mg);
 		return switch (result.outcome()) {
 			case SUCCESS -> ActionResult.ok("Aklama başarılı: " + GoldStandard.formatMilligrams(result.cleanedMg()) + " temizlendi.");
@@ -878,12 +929,15 @@ public final class DashboardActionService {
 		return ActionResult.ok(playerName + " hesabı çözüldü.");
 	}
 
-	public static ActionResult masakFine(String playerName, int grams) {
+	public static ActionResult masakFine(String playerName, long displayMc) {
 		UUID uuid = BalanceCommand.findPlayerUuid(playerName);
 		if (uuid == null) {
 			return ActionResult.fail("Oyuncu bulunamadı.");
 		}
-		long mg = GoldStandard.gramsToMilligrams(grams);
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
 		McEconomyMod.getEconomyManager().masakService().applyFine(uuid, mg);
 		return ActionResult.ok(playerName + " → " + GoldStandard.formatMilligrams(mg) + " ceza uygulandı.");
 	}

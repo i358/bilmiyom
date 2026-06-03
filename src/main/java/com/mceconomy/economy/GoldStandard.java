@@ -1,14 +1,15 @@
 package com.mceconomy.economy;
 
 /**
- * Altın standardı: 1000 gram = 1 Minecraft altın külçesi (1 kg).
- * 100 buğday = 100 gram altın (1 buğday = 1 gram).
- * Dahili birim: altın miligramı (mgAu).
+ * Altın standardı: 1 gram = 1000 MC, 1000 gram = 1 külçe, 9 külçe = 1 blok.
+ * Dahili birim: mgAu (1 mgAu = 1 MC, goldFactor ile carpilir).
  */
 public final class GoldStandard {
 	public static final long GRAMS_PER_INGOT = 1000;
 	public static final long MILLIGRAMS_PER_GRAM = 1000;
 	public static final long MILLIGRAMS_PER_INGOT = GRAMS_PER_INGOT * MILLIGRAMS_PER_GRAM;
+	public static final int INGOTS_PER_BLOCK = 9;
+	public static final long MILLIGRAMS_PER_BLOCK = MILLIGRAMS_PER_INGOT * INGOTS_PER_BLOCK;
 
 	public static final int WHEAT_PER_100_GRAMS = 100;
 	public static final long MILLIGRAMS_GOLD_PER_WHEAT = (100 * MILLIGRAMS_PER_GRAM) / WHEAT_PER_100_GRAMS;
@@ -36,9 +37,17 @@ public final class GoldStandard {
 		}
 	}
 
-	/** 1 altin kulcesinin guncel MC degeri. */
+	/** 1 altin kulcesinin guncel MC degeri (1000 gram x 1000 MC). */
 	public static double ingotPriceMc() {
-		return GRAMS_PER_INGOT * goldFactor;
+		return (MILLIGRAMS_PER_INGOT / (double) MILLIGRAMS_PER_GRAM) * goldFactor;
+	}
+
+	public static double blockPriceMc() {
+		return (MILLIGRAMS_PER_BLOCK / (double) MILLIGRAMS_PER_GRAM) * goldFactor;
+	}
+
+	public static double gramPriceMc() {
+		return 1000.0 * goldFactor;
 	}
 
 	public static long gramsToMilligrams(long grams) {
@@ -64,7 +73,7 @@ public final class GoldStandard {
 		if (milligrams < 0) {
 			return "-" + formatMilligrams(-milligrams);
 		}
-		double mc = milligrams / (double) MILLIGRAMS_PER_GRAM;
+		double mc = milligramsToMc(milligrams);
 		String number;
 		if (mc == Math.floor(mc)) {
 			number = String.format("%,d", (long) mc);
@@ -74,7 +83,21 @@ public final class GoldStandard {
 		return number + " " + CURRENCY_NAME;
 	}
 
+	public static double milligramsToMc(long milligrams) {
+		return milligrams * goldFactor;
+	}
+
+	/** Ekranda gorunen MC tutarini cuzdan/banka dahili mg birimine cevirir. */
+	public static long milligramsForDisplayMc(double displayMc) {
+		if (displayMc <= 0) {
+			return 0;
+		}
+		return Math.max(1L, Math.round(displayMc / Math.max(0.001, goldFactor)));
+	}
+
 	public static String formatWheatExchange() {
-		return "1 bugday ≈ 1 MC | 1 altin kulcesi = " + String.format("%,.0f", ingotPriceMc()) + " MC";
+		return "1 gram altin = " + String.format("%,.0f", gramPriceMc()) + " MC | 1 kulce = "
+				+ String.format("%,.0f", ingotPriceMc()) + " MC | 1 blok = "
+				+ String.format("%,.0f", blockPriceMc()) + " MC";
 	}
 }

@@ -49,6 +49,8 @@ public final class Messages {
 					args[0] + " altın külçesi bankadan çekildi (" + gold(args[1]) + ").";
 			case "command.mceconomy.bank.no_gold" ->
 					"Envanterinizde yeterli altın külçesi yok.";
+			case "command.mceconomy.bank.wanted_gold_deposit" ->
+					"Kayıp MB seri numaralı altın bankaya yatırılamaz. Yalnızca karaborsada eriterek aklayabilirsiniz.";
 			case "command.mceconomy.bank.inventory_full" ->
 					"Envanteriniz dolu, altın külçesi verilemedi.";
 			case "command.mceconomy.gui.opened" ->

@@ -28,6 +28,7 @@ public final class BankGuiManager {
 	public static final int SLOT_CLOSE = 22;
 
 	private static final int[] INGOT_OPTIONS = {1, 5, 10, 64};
+	private static final int[] GRAM_OPTIONS = {1, 10, 100, 1000};
 
 	private BankGuiManager() {
 	}
@@ -58,10 +59,12 @@ public final class BankGuiManager {
 				"Ürün sat → cüzdan → banka → külçe çek"));
 
 		container.setItem(SLOT_CREATE, GuiItems.button(Items.PAPER, "Hesap Aç", "Ücretsiz vadesiz hesap"));
+		String ingotMcLine = "1 kulce = " + String.format("%,.0f", GoldStandard.ingotPriceMc()) + " MC";
+		String gramMcLine = "1 gram = " + String.format("%,.0f", GoldStandard.gramPriceMc()) + " MC";
 		container.setItem(SLOT_DEPOSIT, GuiItems.button(Items.GOLD_INGOT, "Külçe Yatır",
-				"Envanterdeki altını bankaya", "1 külçe = 1000 gram"));
-		container.setItem(SLOT_WITHDRAW, GuiItems.button(Items.GOLD_BLOCK, "Külçe Çek",
-				"Bankadan fiziksel altın al", "1000 gram = 1 külçe"));
+				"Envanterdeki altını bankaya", ingotMcLine));
+		container.setItem(SLOT_WITHDRAW, GuiItems.button(Items.GOLD_BLOCK, "Altın Çek",
+				"Külçe veya gram parça", gramMcLine));
 		container.setItem(SLOT_WALLET, GuiItems.button(Items.EMERALD, "Cüzdan",
 				GoldStandard.formatMilligrams(walletMg), "Market satış geliri buraya"));
 		container.setItem(SLOT_SELL, GuiItems.button(Items.WHEAT, "Ürün Sat",
@@ -69,9 +72,9 @@ public final class BankGuiManager {
 		container.setItem(SLOT_BUY, GuiItems.button(Items.IRON_INGOT, "Mal Al",
 				"Altın harcayarak mal al", "Altın külçesi satılmaz/alınmaz"));
 		container.setItem(SLOT_WALLET_TO_BANK, GuiItems.button(Items.CHEST,
-				"Cüzdan → Banka", "1 külçe değeri aktar", "Külçe çekmeden önce"));
+				"Cüzdan → Banka", "1K / 10K / 100K / 1M MC", "Tutar seçerek aktar"));
 		container.setItem(SLOT_BANK_TO_WALLET, GuiItems.button(Items.GOLD_NUGGET,
-				"Banka → Cüzdan", "1 külçe değeri aktar", "Mal almak için"));
+				"Banka → Cüzdan", "1K / 10K / 100K / 1M MC", "Tutar seçerek çek"));
 		container.setItem(SLOT_ILLEGAL, GuiItems.button(Items.SKELETON_SKULL,
 				"Yeraltı", "Karaborsa + aklama", "§cRiskli işlemler"));
 		container.setItem(SLOT_EXCHANGE, GuiItems.button(Items.EMERALD_BLOCK,
@@ -103,10 +106,10 @@ public final class BankGuiManager {
 					if (requireLegalSpending(sp)) openBuyMenu(sp);
 				}
 				case SLOT_WALLET_TO_BANK -> {
-					if (requireLegalSpending(sp)) handleWalletToBank(sp, 1);
+					if (requireLegalSpending(sp)) openWalletTransferMenu(sp, true);
 				}
 				case SLOT_BANK_TO_WALLET -> {
-					if (requireLegal(sp)) handleBankToWallet(sp, 1);
+					if (requireLegal(sp)) openWalletTransferMenu(sp, false);
 				}
 				case SLOT_ILLEGAL -> IllegalGuiManager.openHub(sp);
 				case SLOT_EXCHANGE -> {
@@ -145,14 +148,24 @@ public final class BankGuiManager {
 		SimpleContainer container = new SimpleContainer(27);
 		fillBackgroundPublic(container);
 
-		String title = deposit ? "Külçe Yatır" : "Külçe Çek";
+		String title = deposit ? "Külçe Yatır" : "Altın Çek";
 		for (int i = 0; i < INGOT_OPTIONS.length; i++) {
 			int ingots = INGOT_OPTIONS[i];
 			long mg = GoldStandard.ingotsToMilligrams(ingots);
 			container.setItem(10 + i, GuiItems.button(Items.GOLD_INGOT,
 					ingots + " Külçe",
 					GoldStandard.formatMilligrams(mg),
-					deposit ? "Envanterden bankaya" : "Bankadan envantere"));
+					deposit ? "Envanterden bankaya" : "Bankadan külçe"));
+		}
+		if (!deposit) {
+			for (int i = 0; i < GRAM_OPTIONS.length; i++) {
+				int grams = GRAM_OPTIONS[i];
+				long mg = GoldStandard.gramsToMilligrams(grams);
+				container.setItem(14 + i, GuiItems.button(Items.GOLD_NUGGET,
+						grams + " gram",
+						GoldStandard.formatMilligrams(mg),
+						grams + " altın parçacığı"));
+			}
 		}
 		container.setItem(SLOT_BACK, GuiItems.backButton());
 		container.setItem(SLOT_CLOSE, GuiItems.closeButton());
@@ -177,8 +190,26 @@ public final class BankGuiManager {
 					handleWithdraw(sp, ingots);
 				}
 				openIngotMenu(sp, deposit);
+			} else if (!deposit && slotId >= 14 && slotId < 14 + GRAM_OPTIONS.length) {
+				int grams = GRAM_OPTIONS[slotId - 14];
+				handleWithdrawGrams(sp, grams);
+				openIngotMenu(sp, false);
 			}
 		});
+	}
+
+	private static void handleWithdrawGrams(ServerPlayer player, int grams) {
+		if (McEconomyMod.getEconomyManager().bankService().getChecking(player.getUUID()).isEmpty()) {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_account"));
+			return;
+		}
+		long mg = GoldStandard.gramsToMilligrams(grams);
+		if (McEconomyMod.getEconomyManager().bankService().withdrawPhysicalGoldGrams(player.getUUID(), player, grams)) {
+			player.sendSystemMessage(Component.literal(
+					"§a[Banka] §f" + grams + " gram altin parcacik olarak cekildi (" + GoldStandard.formatMilligrams(mg) + ")."));
+		} else {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.pay.insufficient"));
+		}
 	}
 
 	private static void openSellMenu(ServerPlayer player) {
@@ -323,6 +354,11 @@ public final class BankGuiManager {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_gold"));
 			return;
 		}
+		if (PhysicalGoldService.hasWantedGoldIngots(player)
+				&& PhysicalGoldService.countDepositEligibleGoldIngots(player) < ingots) {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.wanted_gold_deposit"));
+			return;
+		}
 		if (McEconomyMod.getEconomyManager().bankService().depositPhysicalGold(player.getUUID(), player, ingots)) {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.physical_deposit", ingots, mg));
 		} else {
@@ -345,28 +381,93 @@ public final class BankGuiManager {
 		}
 	}
 
-	private static void handleWalletToBank(ServerPlayer player, int ingots) {
+	private static final double[] WALLET_TRANSFER_MC = {1_000, 10_000, 100_000, 1_000_000};
+
+	private static void openWalletTransferMenu(ServerPlayer player, boolean toBank) {
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(player.getUUID()).isEmpty()) {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_account"));
 			return;
 		}
-		long mg = GoldStandard.ingotsToMilligrams(ingots);
-		if (McEconomyMod.getEconomyManager().bankService().depositToBank(player.getUUID(), mg)) {
-			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.deposit", mg));
+		SimpleContainer container = new SimpleContainer(27);
+		fillBackgroundPublic(container);
+		String title = toBank ? "Cüzdan → Banka" : "Banka → Cüzdan";
+		var economy = McEconomyMod.getEconomyManager();
+		long walletMg = economy.currencyService().getBalance(player.getUUID());
+		long bankMg = economy.bankService().getBankBalanceMg(player.getUUID());
+		for (int i = 0; i < WALLET_TRANSFER_MC.length; i++) {
+			double displayMc = WALLET_TRANSFER_MC[i];
+			long mg = GoldStandard.milligramsForDisplayMc(displayMc);
+			container.setItem(10 + i, GuiItems.button(Items.GOLD_NUGGET,
+					String.format("%,.0f MC", displayMc),
+					GoldStandard.formatMilligrams(mg),
+					toBank ? "Cüzdandan bankaya" : "Bankadan cüzdana"));
+		}
+		container.setItem(14, GuiItems.button(Items.EMERALD_BLOCK,
+				"Tümü",
+				toBank
+						? "Cüzdan: " + GoldStandard.formatMilligrams(walletMg)
+						: "Banka: " + GoldStandard.formatMilligrams(bankMg),
+				toBank ? "Tüm cüzdan bakiyesi" : "Tüm banka bakiyesi"));
+		container.setItem(SLOT_BACK, GuiItems.backButton());
+		container.setItem(SLOT_CLOSE, GuiItems.closeButton());
+		open(player, container, "§6" + title, (slotId, button, p) -> {
+			if (!(p instanceof ServerPlayer sp)) {
+				return;
+			}
+			if (slotId == SLOT_BACK) {
+				openMainMenu(sp);
+				return;
+			}
+			if (slotId == SLOT_CLOSE) {
+				sp.closeContainer();
+				return;
+			}
+			if (slotId == 14) {
+				long amount = toBank ? walletMg : bankMg;
+				if (toBank) {
+					handleWalletToBank(sp, amount);
+				} else {
+					handleBankToWallet(sp, amount);
+				}
+				return;
+			}
+			if (slotId >= 10 && slotId < 10 + WALLET_TRANSFER_MC.length) {
+				long mg = GoldStandard.milligramsForDisplayMc(WALLET_TRANSFER_MC[slotId - 10]);
+				if (toBank) {
+					handleWalletToBank(sp, mg);
+				} else {
+					handleBankToWallet(sp, mg);
+				}
+			}
+		});
+	}
+
+	private static void handleWalletToBank(ServerPlayer player, long milligrams) {
+		if (McEconomyMod.getEconomyManager().bankService().getChecking(player.getUUID()).isEmpty()) {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_account"));
+			return;
+		}
+		if (milligrams <= 0) {
+			return;
+		}
+		if (McEconomyMod.getEconomyManager().bankService().depositToBank(player.getUUID(), milligrams)) {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.deposit", milligrams));
 			openMainMenu(player);
 		} else {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.pay.insufficient"));
 		}
 	}
 
-	private static void handleBankToWallet(ServerPlayer player, int ingots) {
+	private static void handleBankToWallet(ServerPlayer player, long milligrams) {
 		if (McEconomyMod.getEconomyManager().bankService().getChecking(player.getUUID()).isEmpty()) {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_account"));
 			return;
 		}
-		long mg = GoldStandard.ingotsToMilligrams(ingots);
-		if (McEconomyMod.getEconomyManager().bankService().withdrawFromBank(player.getUUID(), mg)) {
-			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.withdraw", mg));
+		if (milligrams <= 0) {
+			return;
+		}
+		if (McEconomyMod.getEconomyManager().bankService().withdrawFromBank(player.getUUID(), milligrams)) {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.withdraw", milligrams));
 			openMainMenu(player);
 		} else {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.pay.insufficient"));

@@ -1,6 +1,7 @@
 package com.mceconomy.heist;
 
 import com.mceconomy.McEconomyMod;
+import com.mceconomy.facility.FacilityType;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.reserve.GoldReserveService;
@@ -120,21 +121,21 @@ public final class HeistService {
 			int taken = goldReserve.withdrawGoldBlocks(level, lootBlocks);
 			int ingots = taken * GoldReserveService.INGOTS_PER_GOLD_BLOCK;
 			ServerPlayer initiator = initiatorUuid != null ? server.getPlayerList().getPlayer(initiatorUuid) : null;
-			if (initiator != null && ingots > 0) {
-				ItemStack stack = new ItemStack(Items.GOLD_INGOT, Math.min(ingots, 64));
-				com.mceconomy.facility.FacilityItemTags.markStolen(stack);
-				initiator.getInventory().add(stack);
-				if (ingots > 64) {
-					ItemStack extra = new ItemStack(Items.GOLD_INGOT, Math.min(ingots - 64, 64));
-					com.mceconomy.facility.FacilityItemTags.markStolen(extra);
-					initiator.getInventory().add(extra);
+			var manager = McEconomyMod.getEconomyManager();
+			if (initiator != null && ingots > 0 && manager != null && manager.bankAssetSerialRegistry() != null) {
+				int remaining = ingots;
+				while (remaining > 0) {
+					int chunk = Math.min(remaining, 64);
+					ItemStack stack = new ItemStack(Items.GOLD_INGOT, chunk);
+					String serial = manager.bankAssetSerialRegistry().assignSerial(stack, FacilityType.PHYSICAL_GOLD);
+					manager.bankAssetSerialRegistry().registerWantedSerial(serial);
+					initiator.getInventory().add(stack);
+					remaining -= chunk;
 				}
 			}
 			long stolenMg = GoldStandard.ingotsToMilligrams(ingots);
-			var manager = McEconomyMod.getEconomyManager();
 			if (initiatorUuid != null && manager != null && manager.bankRobberyJusticeService() != null) {
-				manager.bankRobberyJusticeService().markSuspect(initiatorUuid,
-						EconomyConfig.bankRobberySuspectDurationMs());
+				manager.bankRobberyJusticeService().scheduleMorningInvestigation(initiatorUuid);
 			}
 			if (manager != null && manager.bulletinService() != null) {
 				manager.bulletinService().publishRobbery(server, manager.centralBank(),

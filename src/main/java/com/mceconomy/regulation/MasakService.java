@@ -59,6 +59,24 @@ public final class MasakService {
 		}
 	}
 
+	public void onGoldSmeltCaught(UUID player, long amountMg) {
+		if (!EconomyConfig.masakEnabled()) {
+			return;
+		}
+		flag(player, "Karaborsa altin eritme yakalandi", 92, amountMg, true);
+	}
+
+	public void onGoldSmeltSuccess(UUID player, long amountMg) {
+		if (!EconomyConfig.masakEnabled()) {
+			return;
+		}
+		blackMarketActivity.merge(player, 1, Integer::sum);
+		int count = blackMarketActivity.getOrDefault(player, 0);
+		if (count >= EconomyConfig.masakBlackMarketThreshold()) {
+			flag(player, "Karaborsa altin eritme aktivitesi", 72, amountMg, false);
+		}
+	}
+
 	public void onLaunderingAttempt(UUID player, long amountMg, boolean caught) {
 		if (!EconomyConfig.masakEnabled()) {
 			return;

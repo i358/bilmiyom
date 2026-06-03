@@ -135,6 +135,16 @@ public final class PrisonService {
 		return true;
 	}
 
+	public void feedJailedPlayers() {
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			if (!isJailed(player.getUUID())) {
+				continue;
+			}
+			player.getFoodData().setFoodLevel(20);
+			player.getFoodData().setSaturation(20.0f);
+		}
+	}
+
 	public void tick() {
 		long now = System.currentTimeMillis();
 		for (PrisonSentence sentence : new HashMap<>(active).values()) {

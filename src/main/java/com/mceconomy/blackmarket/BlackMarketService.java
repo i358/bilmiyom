@@ -190,7 +190,7 @@ public final class BlackMarketService {
 		int stolen = 0;
 		for (int slot = 0; slot < player.getInventory().getContainerSize() && stolen < maxQuantity; slot++) {
 			ItemStack stack = player.getInventory().getItem(slot);
-			if (stack.is(item) && FacilityItemTags.isStolen(stack)) {
+			if (stack.is(item) && FacilityItemTags.matchesWantedSerial(stack)) {
 				stolen += Math.min(stack.getCount(), maxQuantity - stolen);
 			}
 		}

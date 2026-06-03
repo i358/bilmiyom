@@ -318,6 +318,11 @@ public final class BankGuiManager {
 			return;
 		}
 		long mg = GoldStandard.ingotsToMilligrams(ingots);
+		int have = PhysicalGoldService.countGoldIngots(player);
+		if (have < ingots) {
+			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.no_gold"));
+			return;
+		}
 		if (McEconomyMod.getEconomyManager().bankService().depositPhysicalGold(player.getUUID(), player, ingots)) {
 			player.sendSystemMessage(Messages.tr("command.mceconomy.bank.physical_deposit", ingots, mg));
 		} else {

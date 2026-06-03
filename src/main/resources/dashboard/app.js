@@ -997,12 +997,38 @@ async function refresh() {
   startChartLiveRefresh();
 }
 
+document.getElementById('setupPasswordBtn')?.addEventListener('click', async () => {
+  const err = document.getElementById('loginError');
+  const username = document.getElementById('username')?.value?.trim();
+  const password = document.getElementById('password')?.value || '';
+  if (!username || password.length < 4) {
+    if (err) err.textContent = 'Kullanıcı adı ve en az 4 karakterlik şifre girin.';
+    return;
+  }
+  const data = await api('/setup-password', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  });
+  if (data.error || !data.success) {
+    if (err) err.textContent = data.message || 'Şifre kaydedilemedi.';
+    showToast(data.message || 'Şifre kaydedilemedi.', false);
+    return;
+  }
+  if (err) err.textContent = '';
+  showToast(data.message || 'Şifre kaydedildi.', true);
+});
+
 document.getElementById('loginBtn').onclick = async () => {
+  const err = document.getElementById('loginError');
   const data = await api('/login', {
     method: 'POST',
     body: JSON.stringify({ username: document.getElementById('username').value, password: document.getElementById('password').value })
   });
-  if (data.error) { document.getElementById('loginError').textContent = data.message; return; }
+  if (data.error) {
+    if (err) err.textContent = data.message || 'Giriş başarısız';
+    return;
+  }
+  if (err) err.textContent = '';
   token = data.token;
   localStorage.setItem('mceconomy_token', token);
   if (data.op) document.getElementById('adminLink').classList.remove('hidden');

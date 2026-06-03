@@ -58,6 +58,7 @@ public final class EconomyWebServer {
 			server.createContext("/", this::handleStatic);
 			server.createContext("/admin", exchange -> serveResource(exchange, "/dashboard/admin.html"));
 			server.createContext("/api/login", this::handleLogin);
+			server.createContext("/api/setup-password", this::handleSetupPassword);
 			server.createContext("/api/logout", this::handleLogout);
 			server.createContext("/api/me", this::handleMe);
 			server.createContext("/api/catalog", this::handleCatalog);
@@ -124,9 +125,18 @@ public final class EconomyWebServer {
 			return;
 		}
 		PlayerEconomyProfile profile = findProfileByName(username);
-		if (profile == null || !DashboardPasswordService.hasPassword(profile)
-				|| !DashboardPasswordService.verify(profile, password)) {
-			sendJson(exchange, 401, error("auth", "Giriş başarısız"));
+		if (profile == null) {
+			sendJson(exchange, 401, error("not_found",
+					"Oyuncu bulunamadı. Önce Minecraft sunucusuna giriş yapın."));
+			return;
+		}
+		if (!DashboardPasswordService.hasPassword(profile)) {
+			sendJson(exchange, 401, error("no_password",
+					"Henüz şifre yok. Oyunda /panel sifre <şifre> veya sitede «İlk şifre belirle» kullanın (çevrimiçi olmalısınız)."));
+			return;
+		}
+		if (!DashboardPasswordService.verify(profile, password)) {
+			sendJson(exchange, 401, error("auth", "Şifre hatalı."));
 			return;
 		}
 		boolean op = isOnlineOp(profile.uuid());
@@ -136,6 +146,55 @@ public final class EconomyWebServer {
 		ok.addProperty("playerName", profile.name());
 		ok.addProperty("op", op);
 		sendJson(exchange, 200, ok);
+	}
+
+	private void handleSetupPassword(HttpExchange exchange) throws IOException {
+		if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+			sendJson(exchange, 405, error("method", "POST gerekli"));
+			return;
+		}
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || !manager.isLoaded()) {
+			sendJson(exchange, 503, error("unavailable", "Ekonomi sistemi hazır değil"));
+			return;
+		}
+		JsonObject body = readJson(exchange);
+		String username = text(body, "username");
+		String password = text(body, "password");
+		if (username == null || password == null) {
+			sendJson(exchange, 400, error("invalid", "Kullanıcı adı ve şifre gerekli"));
+			return;
+		}
+		password = password.trim();
+		if (password.length() < 4) {
+			sendJson(exchange, 400, error("invalid", "Şifre en az 4 karakter olmalı"));
+			return;
+		}
+		PlayerEconomyProfile profile = findProfileByName(username);
+		if (profile == null) {
+			sendJson(exchange, 404, error("not_found", "Kayıt yok. Önce sunucuya giriş yapın."));
+			return;
+		}
+		if (DashboardPasswordService.hasPassword(profile)) {
+			sendJson(exchange, 409, error("exists", "Şifre zaten ayarlı. Giriş yapın."));
+			return;
+		}
+		if (!isOnline(profile.uuid())) {
+			sendJson(exchange, 403, error("offline",
+					"İlk şifre için oyunda çevrimiçi olmalısınız."));
+			return;
+		}
+		try {
+			DashboardPasswordService.setPassword(profile, password);
+			manager.playerRepository().save(profile);
+			JsonObject ok = new JsonObject();
+			ok.addProperty("success", true);
+			ok.addProperty("message", "Dashboard şifreniz kaydedildi. Şimdi giriş yapabilirsiniz.");
+			sendJson(exchange, 200, ok);
+		} catch (Exception e) {
+			McEconomyMod.LOGGER.error("Web dashboard sifre kaydi", e);
+			sendJson(exchange, 500, error("save", "Şifre kaydedilemedi: " + e.getMessage()));
+		}
 	}
 
 	private void handleLogout(HttpExchange exchange) throws IOException {
@@ -1449,12 +1508,32 @@ public final class EconomyWebServer {
 	}
 
 	private PlayerEconomyProfile findProfileByName(String username) {
-		for (PlayerEconomyProfile profile : McEconomyMod.getEconomyManager().profiles().values()) {
-			if (profile.name().equalsIgnoreCase(username)) {
+		if (username == null || username.isBlank()) {
+			return null;
+		}
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null) {
+			return null;
+		}
+		for (PlayerEconomyProfile profile : manager.profiles().values()) {
+			if (profile.name().equalsIgnoreCase(username.trim())) {
 				return profile;
 			}
 		}
-		return null;
+		try {
+			return manager.playerRepository().findByNameIgnoreCase(username.trim()).orElse(null);
+		} catch (java.sql.SQLException e) {
+			McEconomyMod.LOGGER.error("Profil adi ile arama", e);
+			return null;
+		}
+	}
+
+	private boolean isOnline(UUID uuid) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || manager.server() == null) {
+			return false;
+		}
+		return manager.server().getPlayerList().getPlayer(uuid) != null;
 	}
 
 	private static int intVal(JsonObject obj, String key, int defaultVal) {

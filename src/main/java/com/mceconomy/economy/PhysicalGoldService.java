@@ -20,7 +20,7 @@ public final class PhysicalGoldService {
 	}
 
 	public static boolean removeGoldIngots(ServerPlayer player, int ingots) {
-		if (ingots <= 0) {
+		if (ingots <= 0 || countGoldIngots(player) < ingots) {
 			return false;
 		}
 		int remaining = ingots;

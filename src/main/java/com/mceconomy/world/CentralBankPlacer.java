@@ -163,14 +163,31 @@ public final class CentralBankPlacer {
 	}
 
 	public static void rebuild(MinecraftServer server) {
+		rebuild(server, null);
+	}
+
+	/** anchor: komutu kullanan oyuncu — ayni Y, 4 blok onde; null ise config/spawn. */
+	public static void rebuild(MinecraftServer server, net.minecraft.server.level.ServerPlayer anchor) {
 		ServerLevel level = server.overworld();
+		clearAllKnownSites(level);
+		removeExisting(level);
+		EconomyConfig.setSpawnBankBuilt(false);
+		BlockPos origin = anchor != null ? computeOriginNearPlayer(anchor) : computeBuildOrigin(level);
+		buildAt(level, origin);
+	}
+
+	public static void clearAllKnownSites(ServerLevel level) {
 		restoreBoundsFromConfig();
 		if (bankOrigin != null) {
 			clearBuiltStructure(level, bankOrigin);
 		}
-		removeExisting(level);
-		EconomyConfig.setSpawnBankBuilt(false);
-		build(server);
+		if (EconomyConfig.bankOriginStored()) {
+			BlockPos cfg = new BlockPos(
+					EconomyConfig.bankOriginX(), EconomyConfig.bankOriginY(), EconomyConfig.bankOriginZ());
+			if (bankOrigin == null || !cfg.equals(bankOrigin)) {
+				clearBuiltStructure(level, cfg);
+			}
+		}
 	}
 
 	/** Modun insa ettigi tum MB hacmini hava ile doldurur (eski yapi kalintisi birakmaz). */
@@ -243,14 +260,33 @@ public final class CentralBankPlacer {
 	}
 
 	private static BlockPos computeBuildOrigin(ServerLevel level) {
+		if (EconomyConfig.bankOriginStored()) {
+			return new BlockPos(
+					EconomyConfig.bankOriginX(), EconomyConfig.bankOriginY(), EconomyConfig.bankOriginZ());
+		}
 		BlockPos spawn = level.getRespawnData().pos().offset(EconomyConfig.spawnBankOffsetX(), 0, EconomyConfig.spawnBankOffsetZ());
 		BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, spawn);
 		return surface.offset(-9, 0, -4);
 	}
 
+	private static BlockPos computeOriginNearPlayer(net.minecraft.server.level.ServerPlayer player) {
+		BlockPos feet = player.blockPosition();
+		double yawRad = Math.toRadians(player.getYRot());
+		int dx = (int) Math.round(-Math.sin(yawRad));
+		int dz = (int) Math.round(Math.cos(yawRad));
+		if (dx == 0 && dz == 0) {
+			dz = 1;
+		}
+		BlockPos front = feet.offset(dx * 4, 0, dz * 4);
+		return new BlockPos(front.getX() - 9, feet.getY(), front.getZ() - 4);
+	}
+
 	private static void build(MinecraftServer server) {
 		ServerLevel level = server.overworld();
-		BlockPos origin = computeBuildOrigin(level);
+		buildAt(level, computeBuildOrigin(level));
+	}
+
+	private static void buildAt(ServerLevel level, BlockPos origin) {
 		clearBuiltStructure(level, origin);
 
 		buildGrandStructure(level, origin);

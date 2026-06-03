@@ -57,6 +57,12 @@ public final class BankRobberyJusticeService {
 		this.profiles = profiles;
 	}
 
+	public void clearInvestigationState() {
+		lastInvestigationMs.clear();
+		suspectUntilMs.clear();
+		failedScanCounts.clear();
+	}
+
 	public void markSuspect(UUID targetUuid, long durationMs) {
 		if (targetUuid == null) {
 			return;

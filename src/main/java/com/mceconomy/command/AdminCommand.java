@@ -41,8 +41,11 @@ public final class AdminCommand {
 					if (!Permissions.isServerOp(ctx.getSource())) {
 						return 0;
 					}
-					CentralBankPlacer.rebuild(ctx.getSource().getServer());
-					ctx.getSource().sendSuccess(() -> Component.literal("Merkez Bankası spawn bölgesinde yeniden kuruldu."), true);
+					var player = ctx.getSource().getPlayer();
+					CentralBankPlacer.rebuild(ctx.getSource().getServer(), player);
+					ctx.getSource().sendSuccess(() -> Component.literal(player != null
+							? "§aMerkez Bankası konumunuzun 4 blok önünde, aynı yükseklikte kuruldu."
+							: "§aMerkez Bankası yeniden kuruldu (spawn/config)."), true);
 					return 1;
 				}))
 				.then(literal("muhafiz-temizle").executes(ctx -> {
@@ -91,7 +94,7 @@ public final class AdminCommand {
 
 	private static int resetModWorld(CommandSourceStack source) {
 		try {
-			var report = ModWorldResetService.resetModStructures(source.getServer());
+			var report = ModWorldResetService.resetModStructures(source.getServer(), source.getPlayer());
 			source.sendSuccess(() -> Component.literal(
 					"§a[MC Economy] Tam sifirlama: veritabani "
 							+ (report.databaseWiped() ? "temizlendi" : "HATA")

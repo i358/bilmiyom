@@ -109,6 +109,22 @@ public final class MigrationRunner {
 			migrateV21();
 			setVersion(21);
 		}
+		if (current < 22) {
+			migrateV22();
+			setVersion(22);
+		}
+	}
+
+	private void migrateV22() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V22: dashboard sifre sutunlari...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE players ADD COLUMN dashboard_password_hash TEXT");
+		} catch (SQLException ignored) {
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE players ADD COLUMN dashboard_password_salt TEXT");
+		} catch (SQLException ignored) {
+		}
 	}
 
 	private int getCurrentVersion() throws SQLException {

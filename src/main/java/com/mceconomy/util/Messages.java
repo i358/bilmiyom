@@ -175,6 +175,8 @@ public final class Messages {
 					"Dashboard şifreniz kaydedildi.";
 			case "command.mceconomy.dashboard.password_short" ->
 					"Şifre en az 4 karakter olmalı.";
+			case "command.mceconomy.dashboard.password_save_failed" ->
+					"Şifre kaydedilemedi. Sunucuyu yeniden başlatın veya OP ile iletişime geçin.";
 			case "command.mceconomy.mbop.op_only" ->
 					"Bu komutu yalnızca sunucu OP kullanabilir.";
 			case "command.mceconomy.mbop.granted" ->

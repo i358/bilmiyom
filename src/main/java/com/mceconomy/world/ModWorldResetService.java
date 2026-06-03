@@ -4,6 +4,8 @@ import com.mceconomy.McEconomyMod;
 import com.mceconomy.economy.EconomyManager;
 import com.mceconomy.persistence.EconomyDatabaseReset;
 import com.mceconomy.facility.FacilityType;
+import com.mceconomy.facility.StolenItemCleanup;
+import net.minecraft.server.level.ServerPlayer;
 import com.mceconomy.vault.PlayerVault;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -37,6 +39,10 @@ public final class ModWorldResetService {
 	}
 
 	public static ResetReport resetModStructures(MinecraftServer server) {
+		return resetModStructures(server, null);
+	}
+
+	public static ResetReport resetModStructures(MinecraftServer server, ServerPlayer bankAnchor) {
 		EconomyManager manager = McEconomyMod.getEconomyManager();
 		if (manager == null || !manager.isLoaded()) {
 			throw new IllegalStateException("Ekonomi sistemi hazir degil");
@@ -51,12 +57,14 @@ public final class ModWorldResetService {
 		int company = clearCompanyVaults(level, manager);
 		int cells = clearPrisonCells(level, manager);
 		clearFacilityDepotChests(level);
-		CentralBankPlacer.rebuild(server);
+		CentralBankPlacer.clearAllKnownSites(level);
+		boolean dbWiped = wipeDatabase(manager, server);
+		StolenItemCleanup.purgeAll(server);
+		CentralBankPlacer.rebuild(server, bankAnchor);
 		if (manager.bankSecurityService() != null) {
 			manager.bankSecurityService().purgeExcessGuards();
 			manager.bankSecurityService().syncGuardsFromWorld();
 		}
-		boolean dbWiped = wipeDatabase(manager, server);
 		return new ResetReport(prisoners, entities, personal, company, cells, true, dbWiped);
 	}
 
@@ -64,6 +72,9 @@ public final class ModWorldResetService {
 		try {
 			EconomyDatabaseReset.wipeAllEconomyData(manager.database().connection());
 			manager.reloadAfterDatabaseReset(server);
+			if (manager.bankRobberyJusticeService() != null) {
+				manager.bankRobberyJusticeService().clearInvestigationState();
+			}
 			return true;
 		} catch (SQLException e) {
 			McEconomyMod.LOGGER.error("Ekonomi veritabani sifirlanamadi", e);

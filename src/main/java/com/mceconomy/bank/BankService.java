@@ -125,11 +125,15 @@ public final class BankService {
 		if (account == null || ingots <= 0) {
 			return false;
 		}
+		if (PhysicalGoldService.countGoldIngots(player) < ingots) {
+			return false;
+		}
 		if (!PhysicalGoldService.removeGoldIngots(player, ingots)) {
 			return false;
 		}
+		ServerLevel level = (ServerLevel) player.level();
 		if (depotService != null) {
-			depotService.depositItem((ServerLevel) player.level(), FacilityType.PHYSICAL_GOLD,
+			depotService.depositItem(level, FacilityType.PHYSICAL_GOLD,
 					net.minecraft.world.item.Items.GOLD_INGOT, ingots);
 		}
 		if (depotLedger != null) {
@@ -140,10 +144,37 @@ public final class BankService {
 			}
 		}
 		long mg = GoldStandard.ingotsToMilligrams(ingots);
+		boolean credited;
 		if (currencyService.getBalance(owner) < 0) {
-			return currencyService.deposit(owner, mg, TransactionType.DEPOSIT);
+			credited = currencyService.deposit(owner, mg, TransactionType.DEPOSIT);
+		} else {
+			credited = account.deposit(mg);
 		}
-		return account.deposit(mg);
+		if (!credited) {
+			rollbackPhysicalDeposit(level, player, ingots);
+			return false;
+		}
+		try {
+			repository.save(account);
+		} catch (SQLException e) {
+			com.mceconomy.McEconomyMod.LOGGER.error("Banka hesabi kaydedilemedi", e);
+		}
+		return true;
+	}
+
+	private void rollbackPhysicalDeposit(ServerLevel level, ServerPlayer player, int ingots) {
+		if (depotService != null) {
+			depotService.withdrawItem(level, FacilityType.PHYSICAL_GOLD,
+					net.minecraft.world.item.Items.GOLD_INGOT, ingots);
+		}
+		if (depotLedger != null) {
+			try {
+				depotLedger.onPhysicalGoldWithdrawn(ingots);
+			} catch (SQLException e) {
+				com.mceconomy.McEconomyMod.LOGGER.error("Altin kasasi defteri geri alinamadi", e);
+			}
+		}
+		PhysicalGoldService.giveGoldIngots(player, ingots);
 	}
 
 	public boolean withdrawPhysicalGold(UUID owner, ServerPlayer player, int ingots) {

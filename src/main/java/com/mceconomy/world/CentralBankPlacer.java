@@ -565,6 +565,30 @@ public final class CentralBankPlacer {
 		reserveCenter = center;
 	}
 
+	/** Celik kasa icindeki altin bloklari yeniden koyar (yapiyi silmez). */
+	public static int refillGoldReserveVault(ServerLevel level) {
+		if (reserveCenter == null) {
+			restoreBoundsFromConfig();
+		}
+		if (reserveCenter == null) {
+			return 0;
+		}
+		BlockState gold = Blocks.GOLD_BLOCK.defaultBlockState();
+		int placed = 0;
+		for (int x = -1; x <= 1; x++) {
+			for (int z = -1; z <= 1; z++) {
+				for (int y = 1; y <= 2; y++) {
+					BlockPos pos = reserveCenter.offset(x, y, z);
+					if (!level.getBlockState(pos).is(Blocks.GOLD_BLOCK)) {
+						level.setBlockAndUpdate(pos, gold);
+						placed++;
+					}
+				}
+			}
+		}
+		return placed;
+	}
+
 	private static void spawnBanker(ServerLevel level, BlockPos pos) {
 		Villager villager = EntityType.VILLAGER.create(
 				level, null, pos, EntitySpawnReason.COMMAND, false, false);

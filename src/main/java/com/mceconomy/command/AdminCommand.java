@@ -43,9 +43,36 @@ public final class AdminCommand {
 					}
 					var player = ctx.getSource().getPlayer();
 					CentralBankPlacer.rebuild(ctx.getSource().getServer(), player);
+					var manager = McEconomyMod.getEconomyManager();
+					if (manager != null && manager.goldReserveService() != null) {
+						manager.goldReserveService().refresh(ctx.getSource().getServer());
+					}
 					ctx.getSource().sendSuccess(() -> Component.literal(player != null
 							? "§aMerkez Bankası konumunuzun 4 blok önünde, aynı yükseklikte kuruldu."
 							: "§aMerkez Bankası yeniden kuruldu (spawn/config)."), true);
+					return 1;
+				}))
+				.then(literal("rezerv-doldur").executes(ctx -> {
+					if (!Permissions.isServerOp(ctx.getSource())) {
+						return 0;
+					}
+					var server = ctx.getSource().getServer();
+					int placed = CentralBankPlacer.refillGoldReserveVault(server.overworld());
+					var manager = McEconomyMod.getEconomyManager();
+					int total = 0;
+					if (manager != null && manager.goldReserveService() != null) {
+						total = manager.goldReserveService().countGoldBlocks(server.overworld());
+						try {
+							if (manager.depotLedgerService() != null) {
+								manager.depotLedgerService().setExpectedGoldReserveBlocks(total);
+							}
+						} catch (java.sql.SQLException e) {
+							McEconomyMod.LOGGER.error("Rezerv defteri guncellenemedi", e);
+						}
+					}
+					int finalTotal = total;
+					ctx.getSource().sendSuccess(() -> Component.literal(
+							"§aAltin rezerv: §f" + placed + " blok yerlestirildi. Toplam: §6" + finalTotal), true);
 					return 1;
 				}))
 				.then(literal("muhafiz-temizle").executes(ctx -> {

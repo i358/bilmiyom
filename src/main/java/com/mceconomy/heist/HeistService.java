@@ -82,10 +82,17 @@ public final class HeistService {
 		if (manager != null && manager.bankSecurityService() != null) {
 			manager.bankSecurityService().setHighAlert(true);
 		}
-		int goldBlocks = goldReserve.cachedGoldBlocks();
+		int goldBlocks = goldReserve.countGoldBlocks(server.overworld());
 		broadcast("§4§l[ALARM] §c" + initiator + " Merkez Bankasi soygun protokolunu baslatti!");
 		broadcast("§c[Soygun] §fCelik kasa kilitlendi. Rezervde §6" + goldBlocks
 				+ " §faltin blogu (" + GoldStandard.formatMilligrams(goldReserve.backingMilligrams()) + ") korunuyor.");
+		if (goldBlocks <= 0) {
+			if (CentralBankPlacer.reservePos() == null) {
+				broadcast("§4[Soygun] §cAltin rezerv bolgesi tanimli degil! OP: §e/merkezbanka kur");
+			} else {
+				broadcast("§4[Soygun] §cRezervde altin blok yok (onceki soygun veya yapi eksik). OP: §e/merkezbanka rezerv-doldur");
+			}
+		}
 		var sec = manager != null ? manager.bankSecurityService() : null;
 		if (sec != null && sec.guardsSleeping()) {
 			broadcast("§7[Soygun] §fSure: " + EconomyConfig.heistDurationSeconds()

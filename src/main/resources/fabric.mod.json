@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"id": "mceconomy",
+	"version": "${version}",
+	"name": "MC Economy",
+	"description": "Gelismis server-authoritative ekonomi simulasyon modu",
+	"authors": ["MC Economy Team"],
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"client": ["com.mceconomy.McEconomyClientMod"],
+		"server": ["com.mceconomy.McEconomyServerMod"]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.2",
+		"minecraft": "~26.1.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

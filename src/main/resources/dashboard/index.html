@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MC Economy — Kontrol Paneli</title>
+  <link rel="stylesheet" href="/dashboard/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div id="loginView" class="login-screen">
+    <div class="login-card">
+      <div class="brand-icon">⚜</div>
+      <h1>MC Economy</h1>
+      <p class="subtitle">Oyun içinde <code>/panel sifre &lt;sifre&gt;</code> ile şifre belirleyin.</p>
+      <label>Minecraft Adı</label>
+      <input id="username" placeholder="Kullanıcı adınız" autocomplete="username">
+      <label style="margin-top:12px">Dashboard Şifresi</label>
+      <input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+      <button class="btn btn-gold btn-block" id="loginBtn" style="margin-top:16px">Giriş Yap</button>
+      <p id="loginError" class="error"></p>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar" id="sidebarNav">
+      <div class="sidebar-brand">MC Economy<small id="sidebarPlayer">—</small></div>
+
+      <div class="nav-group">
+        <div class="nav-group-title">Genel</div>
+        <button class="nav-item active" data-page="overview"><span class="icon">📊</span> Genel Bakış</button>
+        <button class="nav-item" data-page="map"><span class="icon">🗺</span> Canlı Harita</button>
+        <button class="nav-item" data-page="bulletins"><span class="icon">📰</span> Bülten Arşivi</button>
+        <button class="nav-item" data-page="charts"><span class="icon">📈</span> Grafikler</button>
+        <button class="nav-item" data-page="inventory"><span class="icon">🎒</span> Envanter</button>
+        <button class="nav-item" data-page="docs"><span class="icon">📖</span> Rehber</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">İşlemler</div>
+        <button class="nav-item" data-page="wallet"><span class="icon">💰</span> Cüzdan & Ödeme</button>
+        <button class="nav-item" data-page="bank"><span class="icon">🏦</span> Banka</button>
+        <button class="nav-item" data-page="market"><span class="icon">🌾</span> Market</button>
+        <button class="nav-item" data-page="loan"><span class="icon">📋</span> Kredi</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Yatırım</div>
+        <button class="nav-item" data-page="exchange"><span class="icon">📉</span> Borsa & Coin</button>
+        <button class="nav-item" data-page="company"><span class="icon">🏢</span> Şirket & Hisse</button>
+        <button class="nav-item" data-page="employees"><span class="icon">👔</span> Çalışanlar</button>
+        <button class="nav-item" data-page="privatebank"><span class="icon">🔐</span> Özel Banka</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Eğlence</div>
+        <button class="nav-item" data-page="casino"><span class="icon">🎰</span> Casino</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Meslek</div>
+        <button class="nav-item" data-page="job"><span class="icon">⛏</span> Meslek & Görev</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Güvenlik</div>
+        <button class="nav-item" data-page="vault"><span class="icon">🔒</span> Kasa & Soygun</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Yasadışı</div>
+        <button class="nav-item" data-page="illegal"><span class="icon">☠</span> Kara Borsa</button>
+        <button class="nav-item" data-page="appeals"><span class="icon">⚖</span> İtirazlar</button>
+        <button class="nav-item" data-page="justice"><span class="icon">🏛</span> Adalet</button>
+      </div>
+      <div class="sidebar-footer">
+        <a id="adminLink" class="hidden nav-item" href="/admin" style="text-decoration:none"><span class="icon">🛡</span> OP Paneli</a>
+        <button class="nav-item" id="logoutBtn"><span class="icon">↩</span> Çıkış</button>
+      </div>
+    </aside>
+
+    <div class="main-content">
+      <header class="topbar">
+        <h2 id="pageTitle">Genel Bakış</h2>
+        <div class="topbar-actions">
+          <span id="onlineBadge" class="badge badge-muted">—</span>
+          <button class="btn btn-ghost btn-sm" id="refreshBtn">Yenile</button>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <!-- OVERVIEW -->
+        <section id="page-overview" class="page active">
+          <div class="stat-grid" id="statGrid"></div>
+          <div class="panel-card" style="margin-bottom:16px">
+            <h3>📰 Ekonomi Bülteni</h3>
+            <div id="bulletinFeed"><p class="hint">Yükleniyor...</p></div>
+            <p class="hint" style="margin-top:8px"><a href="#" data-page="bulletins" class="nav-link">Tüm arşiv →</a></p>
+          </div>
+          <div class="panel-card">
+            <h3>Varlıklarım</h3>
+            <div id="holdings"></div>
+          </div>
+        </section>
+
+        <!-- MAP -->
+        <section id="page-map" class="page">
+          <div class="panel-card">
+            <h3>🗺 Canlı Harita</h3>
+            <p class="hint">MB radar bölgesi: yapılar, mor kamera tespiti, kırmızı canlı oyuncu. OP takip: ad veya <code>*</code>. Hapishane listede (uzak).</p>
+            <div class="form-row" style="margin-bottom:10px">
+              <input id="mapTrackPlayer" placeholder="Takip: oyuncu adı veya * (OP)" style="flex:1">
+              <button class="btn btn-ghost btn-sm" id="mapRefreshBtn">Yenile</button>
+            </div>
+            <div class="form-row" id="mapReplayControls" style="margin-bottom:8px;display:none;gap:8px;flex-wrap:wrap">
+              <button type="button" class="btn btn-ghost btn-sm" id="mapReplayPlayBtn">▶ Radar kaydı oynat</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="mapReplayStopBtn">■ Durdur</button>
+              <label class="hint" style="display:flex;align-items:center;gap:6px">
+                Hız <input type="range" id="mapReplaySpeed" min="1" max="8" value="2" style="width:80px">
+              </label>
+              <span id="mapReplayStatus" class="hint"></span>
+            </div>
+            <div id="worldMapCanvas" class="world-map"><p class="hint">Yükleniyor...</p></div>
+            <ul id="worldMapLegend" class="map-legend"></ul>
+          </div>
+        </section>
+
+        <!-- BULLETINS -->
+        <section id="page-bulletins" class="page">
+          <div class="panel-card">
+            <div class="form-row" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+              <h3 style="margin:0">📰 Bülten Arşivi</h3>
+              <div class="form-row">
+                <button class="btn btn-ghost btn-sm bulletin-filter active" data-category="">Tümü</button>
+                <button class="btn btn-ghost btn-sm bulletin-filter" data-category="ROBBERY">SOYGUN</button>
+                <button class="btn btn-ghost btn-sm bulletin-filter" data-category="STORAGE">DEPO</button>
+                <button class="btn btn-ghost btn-sm bulletin-filter" data-category="MACRO">MAKRO</button>
+              </div>
+            </div>
+            <div id="bulletinArchive"><p class="hint">Yükleniyor...</p></div>
+          </div>
+        </section>
+
+        <!-- CHARTS -->
+        <section id="page-charts" class="page">
+          <div class="panel-card" style="margin-bottom:16px">
+            <div class="form-row" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+              <h3 style="margin:0">Canlı Portföy (coin, hisse & kaldıraç)</h3>
+              <span class="hint" id="portfolioLiveUpdated">—</span>
+            </div>
+            <div id="portfolioLiveCharts" class="portfolio-live-grid"><p class="hint">Yükleniyor...</p></div>
+          </div>
+          <div class="chart-grid">
+            <div class="panel-card span2 chart-box">
+              <h3>Hisse Fiyat Grafiği</h3>
+              <select id="shareChartSelect"></select>
+              <canvas id="shareChart"></canvas>
+            </div>
+            <div class="panel-card span2 chart-box">
+              <h3>Market Fiyat Grafiği</h3>
+              <select id="chartSymbol"></select>
+              <canvas id="priceChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Ekonomi Endeksi</h3>
+              <canvas id="indexChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Enflasyon (%)</h3>
+              <canvas id="inflationChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Altın Rezervi</h3>
+              <canvas id="goldReserveChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Belediye Bütçesi</h3>
+              <canvas id="municipalChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Portföy Dağılımı</h3>
+              <canvas id="portfolioChart"></canvas>
+            </div>
+            <div class="panel-card span2 chart-box">
+              <h3>Market Karşılaştırma</h3>
+              <canvas id="marketBarChart"></canvas>
+            </div>
+            <div class="panel-card span2 chart-box">
+              <h3>Kaldıraçlı Pozisyon</h3>
+              <select id="levChartSelect"></select>
+              <canvas id="leverageChart"></canvas>
+              <p class="hint">Kesikli çizgi: pozisyon açılış fiyatı · Dolu çizgi: canlı coin fiyatı</p>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Borsa Coin</h3>
+              <select id="tokenChartSelect"></select>
+              <canvas id="tokenChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Şirket Hisse Fiyatları</h3>
+              <canvas id="shareBarChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Coin Fiyatları</h3>
+              <canvas id="tokenBarChart"></canvas>
+            </div>
+            <div class="panel-card chart-box">
+              <h3>Varlık Dağılımım (MC)</h3>
+              <canvas id="assetBarChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- INVENTORY -->
+        <section id="page-inventory" class="page">
+          <div class="panel-card">
+            <h3>🎒 Envanter & Kaynaklar</h3>
+            <p class="hint warn-text">Çevrimiçi olmalısınız. Iteme tıklayın: markette sat veya karaborsaya ilan verin.</p>
+            <div id="inventoryBox"><p class="hint">Yükleniyor...</p></div>
+          </div>
+          <div class="panel-card hidden" id="invActionPanel">
+            <h3 id="invActionTitle">Item İşlemi</h3>
+            <p class="hint" id="invActionMeta">—</p>
+            <label>Adet</label><input id="invQty" type="number" min="1" value="1">
+            <label id="invPriceLabel" class="hidden">Birim Fiyat (MC)</label>
+            <input id="invPrice" type="number" min="1" value="10" class="hidden">
+            <div class="form-row" style="margin-top:12px">
+              <button class="btn btn-accent" id="invMarketSellBtn">Markette Sat</button>
+              <button class="btn btn-danger" id="invBmListBtn">Karaborsaya Koy</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- DOCS -->
+        <section id="page-docs" class="page">
+          <div class="panel-card" id="docsBox"></div>
+        </section>
+
+        <!-- EMPLOYEES -->
+        <section id="page-employees" class="page">
+          <div class="panel-card">
+            <h3>👔 Şirket Çalışanları</h3>
+            <p class="hint">NPC başvurularını kabul/red edin, maaş ve ikramiye yönetin. Çalışanlar maaş karşılığı ürün teslim eder — av eti ve diğer mallar <strong>Üretim Deposu</strong>na gider. Panel: <strong>Şirket &amp; Hisse → Üretim Deposu</strong> veya <code>/sirket depo</code> · <code>/sirket topla</code></p>
+            <div id="employeesBox"><p class="hint">Yükleniyor...</p></div>
+          </div>
+        </section>
+
+        <!-- CASINO -->
+        <section id="page-casino" class="page">
+          <p class="hint warn-text" style="margin-bottom:16px">⚠ Kumar bağımlılık yapar ve uzun vadede ev her zaman kazanır. Bahisler cüzdanınızdan (MC) düşülür.</p>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>🪙 Yazı / Tura</h3>
+              <p class="hint">Kazanırsan 1.95x. Tahminini seç.</p>
+              <label>Bahis (MC)</label><input id="cfBet" type="number" min="1" value="10">
+              <label>Tahmin</label>
+              <select id="cfChoice"><option value="yazi">Yazı</option><option value="tura">Tura</option></select>
+              <button class="btn btn-gold btn-block" id="cfBtn" style="margin-top:12px">Çevir</button>
+            </div>
+            <div class="panel-card">
+              <h3>🎲 Zar (1-6)</h3>
+              <p class="hint">Doğru bilirsen 5.5x.</p>
+              <label>Bahis (MC)</label><input id="diceBet" type="number" min="1" value="10">
+              <label>Sayı Tahmini</label>
+              <select id="diceChoice"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select>
+              <button class="btn btn-gold btn-block" id="diceBtn" style="margin-top:12px">Zar At</button>
+            </div>
+            <div class="panel-card">
+              <h3>🎰 Slot Makinesi</h3>
+              <p class="hint">3'lü eşleşme 8x-25x, 2'li eşleşme 1.8x.</p>
+              <label>Bahis (MC)</label><input id="slotBet" type="number" min="1" value="10">
+              <button class="btn btn-gold btn-block" id="slotBtn" style="margin-top:12px">Çevir</button>
+            </div>
+            <div class="panel-card">
+              <h3>Sonuç</h3>
+              <div id="casinoResult" class="casino-result">—</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- WALLET -->
+        <section id="page-wallet" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Ödeme Gönder</h3>
+              <p class="hint">/ode komutu ile aynı — cüzdandan transfer</p>
+              <label>Alıcı</label><input id="payTarget" placeholder="Oyuncu adı">
+              <label>Tutar (MC)</label><input id="payGrams" type="number" min="1" value="1">
+              <button class="btn btn-gold btn-block" id="payBtn">Gönder</button>
+            </div>
+            <div class="panel-card">
+              <h3>Cüzdan ↔ Banka</h3>
+              <label>Tutar (MC)</label><input id="walletMoveGrams" type="number" min="1" value="10">
+              <div class="form-row">
+                <button class="btn btn-accent" id="walletToBankBtn">Bankaya Yatır</button>
+                <button class="btn btn-ghost" id="bankToWalletBtn">Bankadan Çek</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- BANK -->
+        <section id="page-bank" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Hesap İşlemleri</h3>
+              <div class="form-row">
+                <button class="btn btn-accent" id="openCheckingBtn">Vadesiz Hesap Aç</button>
+                <button class="btn btn-ghost" id="openTermBtn">Vadeli Hesap Aç</button>
+              </div>
+              <hr style="border-color:var(--border);margin:16px 0">
+              <h3>Banka Transferi</h3>
+              <label>Alıcı</label><input id="bankTransferTarget" placeholder="Oyuncu adı">
+              <label>Tutar (MC)</label><input id="bankTransferGrams" type="number" min="1" value="10">
+              <button class="btn btn-gold btn-block" id="bankTransferBtn">Transfer Et</button>
+            </div>
+            <div class="panel-card">
+              <h3>Fiziksel Altın</h3>
+              <p class="hint warn-text">Envanter işlemi — oyunda çevrimiçi olmalısınız</p>
+              <label>Külçe Adedi</label><input id="ingotCount" type="number" min="1" value="1">
+              <div class="form-row">
+                <button class="btn btn-accent" id="depositIngotsBtn">Külçe Yatır</button>
+                <button class="btn btn-ghost" id="withdrawIngotsBtn">Külçe Çek</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MARKET -->
+        <section id="page-market" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Market Al</h3>
+              <label>Emtia</label><select id="marketBuySelect"></select>
+              <label>Adet</label><input id="marketBuyQty" type="number" min="1" value="1">
+              <button class="btn btn-gold btn-block" id="marketBuyBtn">Satın Al</button>
+            </div>
+            <div class="panel-card">
+              <h3>Market Sat</h3>
+              <p class="hint warn-text">Envanterden satış — çevrimiçi gerekli</p>
+              <label>Emtia</label><select id="marketSellSelect"></select>
+              <label>Adet</label><input id="marketSellQty" type="number" min="1" value="1">
+              <button class="btn btn-accent btn-block" id="marketSellBtn">Sat</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- LOAN -->
+        <section id="page-loan" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Kredi Durumu</h3>
+              <div id="loanStatus">—</div>
+              <button class="btn btn-accent btn-block" id="loanPayBtn" style="margin-top:12px">Taksit Öde</button>
+            </div>
+            <div class="panel-card">
+              <h3>Kredi Al</h3>
+              <label>Tutar (MC)</label><input id="loanGrams" type="number" min="1" value="100">
+              <button class="btn btn-gold btn-block" id="loanTakeBtn">Kredi Al</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- EXCHANGE -->
+        <section id="page-exchange" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Coin Al / Sat</h3>
+              <label>Coin</label><select id="tokenTradeSelect"></select>
+              <label>Adet</label><input id="tokenTradeQty" type="number" min="1" value="1">
+              <div class="form-row">
+                <button class="btn btn-gold" id="tokenBuyBtn">Al</button>
+                <button class="btn btn-ghost" id="tokenSellBtn">Sat</button>
+              </div>
+              <button class="btn btn-danger btn-block" id="tokenSellAllBtn" style="margin-top:10px">Tüm Coinlerimi Sat</button>
+            </div>
+            <div class="panel-card">
+              <h3>Coin Oluştur</h3>
+              <label>Sembol</label><input id="coinSymbol" placeholder="ABC" maxlength="6">
+              <label>İsim</label><input id="coinName" placeholder="Coin adı">
+              <label>Arz</label><input id="coinSupply" type="number" min="1" value="1000">
+              <label>Fiyat (MC, x1000)</label><input id="coinPriceMg" type="number" min="1" value="1000">
+              <button class="btn btn-accent btn-block" id="coinCreateBtn">Oluştur</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Şirketi Borsada Listele</h3>
+              <div class="form-row">
+                <div><label>Şirket</label><select id="listCompanySelect"></select></div>
+                <div><label>Ticker</label><input id="listTicker" placeholder="TICK" maxlength="6"></div>
+              </div>
+              <button class="btn btn-gold btn-block" id="listCompanyBtn">Listele</button>
+            </div>
+            <div class="panel-card">
+              <h3>Borsadan Çıkar (Delist)</h3>
+              <p class="hint">Sadece sahibi olduğunuz, listede olan şirketler.</p>
+              <label>Şirket</label><select id="delistCompanySelect"></select>
+              <button class="btn btn-danger btn-block" id="delistCompanyBtn">Borsadan Çıkar</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <h3>⚡ Kaldıraçlı İşlem (CFD)</h3>
+            <p class="hint warn-text">Yüksek risk! Zarar teminatınızı aşarsa pozisyon otomatik likide edilir (maks 10x).</p>
+            <div class="leverage-form">
+              <div><label>Coin</label><select id="levSymbol"></select></div>
+              <div><label>Yön</label>
+                <select id="levSide"><option value="long">LONG (Yükselir)</option><option value="short">SHORT (Düşer)</option></select>
+              </div>
+              <div><label>Kaldıraç</label>
+                <select id="levLeverage"><option>2</option><option>3</option><option>5</option><option>10</option></select>
+              </div>
+              <div><label>Teminat (MC)</label><input id="levMargin" type="number" min="1" value="10"></div>
+            </div>
+            <button class="btn btn-gold btn-block" id="levOpenBtn" style="margin-top:12px">Pozisyon Aç</button>
+          </div>
+
+          <div class="panel-card">
+            <h3>Açık Pozisyonlarım</h3>
+            <p class="hint">Canlı fiyat grafikleri — detay için <strong>Grafikler</strong> sekmesi.</p>
+            <div id="leveragePositions"><p class="hint">Açık pozisyon yok.</p></div>
+          </div>
+        </section>
+
+        <!-- COMPANY -->
+        <section id="page-company" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Şirket Kur</h3>
+              <label>Şirket Adı</label><input id="companyName" placeholder="Şirket adı">
+              <button class="btn btn-gold btn-block" id="companyCreateBtn">Kur</button>
+            </div>
+            <div class="panel-card">
+              <h3>Hisse Al / Sat</h3>
+              <label>Şirket</label><select id="shareCompanySelect"></select>
+              <label>Adet</label><input id="shareQty" type="number" min="1" value="1">
+              <div class="form-row">
+                <button class="btn btn-gold" id="shareBuyBtn">Hisse Al</button>
+                <button class="btn btn-ghost" id="shareSellBtn">Hisse Sat</button>
+              </div>
+              <button class="btn btn-danger btn-block" id="shareSellAllBtn" style="margin-top:10px">Tüm Hisselerimi Sat</button>
+            </div>
+          </div>
+          <div class="panel-card" style="margin-top:16px" id="companyStashPanel">
+            <h3>📦 Gizli Şirket Sandığı</h3>
+            <p class="hint">Ham madenler eritilip pazara satılır; madenlerin <strong>%2'si</strong> ve pişmiş yemekler <strong>çelik korumalı gizli sandığa</strong> konur. Diğer ürünler doğrudan pazara gider, gelir şirket kasasına yatar.</p>
+            <p class="hint">Oyun içi: <code>/sirket depo &lt;isim&gt;</code> · <code>/sirket sandik &lt;isim&gt;</code> · <code>/sirket sandik cik</code></p>
+            <label>Şirketiniz</label>
+            <select id="companyStashSelect"></select>
+            <div id="companyStashBox" class="stash-list" style="margin:12px 0"><p class="hint">Yükleniyor...</p></div>
+            <button class="btn btn-gold btn-block" id="companyVaultTpBtn">Sandığa Işınlan</button>
+            <button class="btn btn-ghost btn-block" id="companyVaultExitBtn" style="margin-top:8px">Sandıktan Dön</button>
+            <button class="btn btn-ghost btn-block" id="companyStashRefreshBtn" style="margin-top:8px">Listeyi Yenile</button>
+          </div>
+        </section>
+
+        <!-- PRIVATE BANK -->
+        <section id="page-privatebank" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Bankacılık Sertifikası</h3>
+              <p id="certStatus">—</p>
+              <button class="btn btn-gold btn-block" id="certBuyBtn">Sertifika Al</button>
+              <hr style="border-color:var(--border);margin:16px 0">
+              <label>Banka Adı</label><input id="pbankName" placeholder="Banka ismi">
+              <button class="btn btn-accent btn-block" id="pbankOpenBtn">Özel Banka Aç</button>
+            </div>
+            <div class="panel-card">
+              <h3>Mevduat</h3>
+              <label>Banka</label><select id="pbankSelect"></select>
+              <label>Tutar (MC)</label><input id="pbankGrams" type="number" min="1" value="10">
+              <div class="form-row">
+                <button class="btn btn-gold" id="pbankDepositBtn">Yatır</button>
+                <button class="btn btn-ghost" id="pbankWithdrawBtn">Çek</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- JOB -->
+        <section id="page-job" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Meslek Seç</h3>
+              <label>Meslek</label><select id="jobSelect"></select>
+              <button class="btn btn-gold btn-block" id="jobSetBtn">Meslek Seç</button>
+              <hr style="border-color:var(--border);margin:16px 0">
+              <h3>İstifa</h3>
+              <p class="hint">İstifa edince aktif göreviniz de iptal olur.</p>
+              <button class="btn btn-danger btn-block" id="jobResignBtn">Meslekten İstifa Et</button>
+            </div>
+            <div class="panel-card">
+              <h3>Görevler</h3>
+              <div id="questStatus">—</div>
+              <div class="form-row" style="margin-top:12px">
+                <button class="btn btn-accent" id="questAssignBtn">Görev Al</button>
+                <button class="btn btn-gold" id="questCompleteBtn">Teslim Et</button>
+                <button class="btn btn-ghost" id="questCancelBtn">İptal Et</button>
+              </div>
+              <p class="hint warn-text">Teslim için oyunda çevrimiçi olmalısınız. Bir şirkette çalışıyorsanız <strong>/gorev al</strong> şirket görevi verir — üretim otomatik şirkete gider (pazar/sandık).</p>
+            </div>
+          </div>
+          <div class="panel-card" style="margin-top:16px">
+            <h3>Şirkette Çalışma (Maaşlı İş)</h3>
+            <div id="employmentStatus" class="hint">—</div>
+            <div class="form-row" style="margin-top:12px">
+              <label>Şirket</label><select id="employmentCompany"></select>
+              <label>Rol</label><select id="employmentRole">
+                <option value="madenci">Madenci</option>
+                <option value="ciftci">Çiftçi</option>
+                <option value="balikci">Balıkçı</option>
+                <option value="ormanci">Ormancı</option>
+                <option value="avci">Avcı</option>
+                <option value="tuccar">Tüccar</option>
+              </select>
+              <label>Maaş (mg)</label><input id="employmentSalary" type="number" min="50000" value="50000">
+            </div>
+            <div class="form-row">
+              <button class="btn btn-gold" id="employmentApplyBtn">Başvur</button>
+              <button class="btn btn-ghost" id="employmentQuitBtn">İşten Ayrıl</button>
+            </div>
+            <h4 style="margin-top:16px">Maaş Geçmişi</h4>
+            <div id="salaryHistory">—</div>
+          </div>
+        </section>
+        <section id="page-vault" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>🔒 Kişisel Kasa</h3>
+              <p class="hint">Yer altında, bedrock ile çevrili, sadece size ait kilitli kasa. Işınlanma için oyunda çevrimiçi olmalısınız.</p>
+              <div class="form-row">
+                <button class="btn btn-gold" id="vaultGoBtn">Kasaya Işınlan</button>
+                <button class="btn btn-ghost" id="vaultBackBtn">Geri Dön</button>
+              </div>
+              <p class="hint">Oyun içi: <code>/kasa</code> · <code>/kasa cik</code></p>
+            </div>
+            <div class="panel-card">
+              <h3>🚨 Merkez Bankası Soygunu</h3>
+              <p class="hint warn-text">Roleplay protokolü başlatır. Çelik kasadaki külçe altın rezervini muhafızlar korur, chatte canlı roleplay döner.</p>
+              <div id="heistStatus" class="hint">—</div>
+              <button class="btn btn-danger btn-block" id="heistStartBtn" style="margin-top:12px">Soygun Protokolünü Başlat</button>
+              <p class="hint">Oyun içi: <code>/soygun baslat</code> · <code>/soygun durum</code></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ILLEGAL -->
+        <section id="page-illegal" class="page">
+          <p class="hint warn-text" style="margin-bottom:16px">Kara borsa ve aklama işlemleri için oyunda çevrimiçi olmalısınız.</p>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Kara Borsa</h3>
+              <label>Ürün</label><select id="illegalSelect"></select>
+              <label>Adet</label><input id="illegalQty" type="number" min="1" value="1">
+              <div class="form-row">
+                <button class="btn btn-danger" id="illegalBuyBtn">Al (Kara Para)</button>
+                <button class="btn btn-ghost" id="illegalSellBtn">Sat</button>
+              </div>
+            </div>
+            <div class="panel-card">
+              <h3>Para Aklama</h3>
+              <label>Tutar (MC kara para)</label><input id="launderGrams" type="number" min="1" value="10">
+              <button class="btn btn-accent btn-block" id="launderBtn">Aklamayı Dene</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- JUSTICE -->
+        <section id="page-justice" class="page">
+          <div id="prisonBanner" class="panel-card hidden" style="border-color:#c44;margin-bottom:16px">
+            <h3 style="color:#f66">Hapishanedesiniz</h3>
+            <div id="prisonInfo"></div>
+            <p class="hint">Hapis suresince yasal ekonomi islemleri kapalidir.</p>
+          </div>
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>Şikayet Et</h3>
+              <label>Hedef oyuncu</label><input id="complaintTarget" placeholder="Oyuncu adı">
+              <label>Kategori</label><input id="complaintCategory" placeholder="örn. dolandırıcılık">
+              <label>Konu</label><input id="complaintSubject" placeholder="Kısa başlık">
+              <label>Mesaj</label><textarea id="complaintMessage" placeholder="Detaylı açıklama..."></textarea>
+              <button class="btn btn-gold btn-block" id="complaintSubmitBtn">Şikayet Gönder</button>
+            </div>
+            <div class="panel-card">
+              <h3>İhbar Et</h3>
+              <label>Kategori</label><input id="tipCategory" placeholder="örn. kara borsa">
+              <label>Hedef (isteğe bağlı)</label><input id="tipTarget" placeholder="Boş bırakılabilir">
+              <label>Mesaj</label><textarea id="tipMessage" placeholder="İhbar detayı..."></textarea>
+              <button class="btn btn-accent btn-block" id="tipSubmitBtn">İhbar Gönder</button>
+            </div>
+          </div>
+          <div class="panel-card" style="margin-top:16px">
+            <h3>Başvurularım</h3>
+            <div id="myReports"></div>
+          </div>
+        </section>
+
+        <!-- APPEALS -->
+        <section id="page-appeals" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>İtiraz Gönder</h3>
+              <label>Konu</label><input id="appealSubject" placeholder="Konu">
+              <label>Mesaj</label><textarea id="appealMessage" placeholder="İtirazınız..."></textarea>
+              <label>Uyarı ID (isteğe bağlı)</label><input id="appealAlertId" type="number" placeholder="Boş bırakılabilir">
+              <button class="btn btn-gold btn-block" id="appealSubmitBtn">Gönder</button>
+            </div>
+            <div class="panel-card">
+              <h3>İtirazlarım</h3>
+              <div id="myAppeals"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script src="/dashboard/common.js"></script>
+  <script src="/dashboard/docs.js"></script>
+  <script src="/dashboard/app.js"></script>
+</body>
+</html>

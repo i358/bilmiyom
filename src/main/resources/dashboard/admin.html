@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MC Economy — OP Paneli</title>
+  <link rel="stylesheet" href="/dashboard/style.css">
+</head>
+<body>
+  <div id="loginView" class="login-screen">
+    <div class="login-card">
+      <div class="brand-icon">🛡</div>
+      <h1>OP Kontrol Paneli</h1>
+      <p class="subtitle">Yalnızca sunucu operatörleri (OP) erişebilir. Oyunda OP olmalı ve çevrimiçi olmalısınız.</p>
+      <label>Minecraft Adı</label>
+      <input id="username" placeholder="OP hesabınız">
+      <label style="margin-top:12px">Dashboard Şifresi</label>
+      <input id="password" type="password" placeholder="••••••••">
+      <button class="btn btn-gold btn-block" id="loginBtn" style="margin-top:16px">Giriş Yap</button>
+      <p id="loginError" class="error"></p>
+      <p style="margin-top:16px;text-align:center"><a href="/">← Oyuncu Paneli</a></p>
+    </div>
+  </div>
+
+  <div id="adminView" class="app-shell hidden">
+    <aside class="sidebar" id="adminNav">
+      <div class="sidebar-brand">OP Paneli<small>Sunucu Yönetimi</small></div>
+      <div class="nav-group">
+        <div class="nav-group-title">Genel</div>
+        <button class="nav-item active" data-page="dashboard"><span class="icon">📊</span> Özet</button>
+        <button class="nav-item" data-page="players"><span class="icon">👥</span> Oyuncular</button>
+        <button class="nav-item" data-page="economy"><span class="icon">🏛</span> Merkez Bankası</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Denetim</div>
+        <button class="nav-item" data-page="masak"><span class="icon">🔍</span> MASAK</button>
+        <button class="nav-item" data-page="appeals"><span class="icon">⚖</span> İtirazlar</button>
+        <button class="nav-item" data-page="justice"><span class="icon">🏛</span> Adalet</button>
+        <button class="nav-item" data-page="cameras"><span class="icon">📹</span> Güvenlik Kameraları</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Yönetim</div>
+        <button class="nav-item" data-page="events"><span class="icon">⚡</span> Ekonomi Olayları</button>
+        <button class="nav-item" data-page="mbop"><span class="icon">🎖</span> MB Yetkileri</button>
+        <button class="nav-item" data-page="blackmarket"><span class="icon">☠</span> Karaborsa</button>
+        <button class="nav-item" data-page="tools"><span class="icon">🔧</span> Araçlar</button>
+      </div>
+      <div class="sidebar-footer">
+        <a href="/" class="nav-item" style="text-decoration:none"><span class="icon">←</span> Oyuncu Paneli</a>
+        <button class="nav-item" id="logoutBtn"><span class="icon">↩</span> Çıkış</button>
+      </div>
+    </aside>
+
+    <div class="main-content">
+      <header class="topbar">
+        <h2 id="pageTitle">Özet</h2>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost btn-sm" id="refreshBtn">Yenile</button>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <div class="admin-only-note">Bu panel yalnızca sunucu OP hesaplarına açıktır. MB yetkilisi olmak tek başına yeterli değildir.</div>
+
+        <section id="page-dashboard" class="page active">
+          <div class="stat-grid">
+            <div class="stat-card accent"><div class="label">Kayıtlı Oyuncu</div><div class="value" id="playerCount">—</div></div>
+            <div class="stat-card warn"><div class="label">Açık İtiraz</div><div class="value" id="appealCount">—</div></div>
+            <div class="stat-card warn"><div class="label">Şikayet / İhbar</div><div class="value" id="reportCount">—</div></div>
+            <div class="stat-card danger"><div class="label">Hapiste</div><div class="value" id="prisonerCount">—</div></div>
+            <div class="stat-card danger"><div class="label">MASAK Uyarı</div><div class="value" id="alertCount">—</div></div>
+            <div class="stat-card"><div class="label">MB Yetkilisi</div><div class="value" id="mbCount">—</div></div>
+          </div>
+          <div class="panel-card">
+            <h3>Son MASAK Uyarıları</h3>
+            <div id="alertPreview"></div>
+          </div>
+        </section>
+
+        <section id="page-players" class="page">
+          <div class="panel-card">
+            <h3>Tüm Oyuncular</h3>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Oyuncu</th><th>Cüzdan</th><th>Banka</th><th>Kara</th><th>Skor</th><th>Durum</th><th>İşlem</th></tr></thead>
+                <tbody id="playersTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section id="page-economy" class="page">
+          <div class="panel-card">
+            <h3>Merkez Bankası Raporu</h3>
+            <div id="cbReport">—</div>
+          </div>
+        </section>
+
+        <section id="page-masak" class="page">
+          <div class="panel-card">
+            <h3>Açık MASAK Uyarıları</h3>
+            <div id="alerts"></div>
+          </div>
+          <div class="grid-3">
+            <div class="panel-card">
+              <h3>Hesap Çöz</h3>
+              <label>Oyuncu</label><input id="masakResolvePlayer" placeholder="Oyuncu adı">
+              <button class="btn btn-success btn-block" id="masakResolveBtn">Çöz</button>
+            </div>
+            <div class="panel-card">
+              <h3>Ceza Ver</h3>
+              <label>Oyuncu</label><input id="masakFinePlayer" placeholder="Oyuncu adı">
+              <label>Gram</label><input id="masakFineGrams" type="number" min="1" value="10">
+              <button class="btn btn-danger btn-block" id="masakFineBtn">Ceza Uygula</button>
+            </div>
+            <div class="panel-card">
+              <h3>Kara Liste</h3>
+              <label>Oyuncu</label><input id="masakBlPlayer" placeholder="Oyuncu adı">
+              <button class="btn btn-danger btn-block" id="masakBlBtn">Kara Listeye Al</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="page-appeals" class="page">
+          <div class="panel-card">
+            <h3>Açık İtirazlar</h3>
+            <div id="appeals"></div>
+          </div>
+        </section>
+
+        <section id="page-justice" class="page">
+          <div class="panel-card">
+            <h3>Açık Şikayet ve İhbarlar</h3>
+            <div id="justiceReports"></div>
+          </div>
+          <div class="grid-3" style="margin-top:16px">
+            <div class="panel-card">
+              <h3>Hapse At (OP)</h3>
+              <p class="hint">Kendiniz dahil herkesi hapse gönderebilirsiniz.</p>
+              <label>Oyuncu adı</label><input id="prisonImprisonPlayer" placeholder="Oyuncu veya kendi adınız">
+              <label>Süre (dakika)</label><input id="prisonImprisonMinutes" type="number" min="1" value="5">
+              <label>Sebep</label><input id="prisonImprisonReason" placeholder="Sebep">
+              <button class="btn btn-danger btn-block" id="prisonImprisonBtn">Hapse Gönder</button>
+            </div>
+            <div class="panel-card">
+              <h3>Serbest Bırak</h3>
+              <label>Oyuncu adı</label><input id="prisonReleasePlayer" placeholder="Oyuncu">
+              <button class="btn btn-success btn-block" id="prisonReleaseBtn">Tahliye Et</button>
+            </div>
+            <div class="panel-card">
+              <h3>Aktif Hapis Cezaları</h3>
+              <div id="justicePrisoners"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="page-cameras" class="page">
+          <div class="panel-card">
+            <h3>📹 Merkez Bankası Gece Kameraları</h3>
+            <p class="hint">Gece vardiyasında MB çevresindeki hareketler kaydedilir. Yeni gece başlayınca önceki kayıtlar silinir.</p>
+            <div class="form-row" style="margin-bottom:12px">
+              <label>Gece</label>
+              <select id="cameraNightSelect"></select>
+              <button class="btn btn-ghost btn-sm" id="cameraReloadBtn">Yenile</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="cameraReplayPlayBtn">▶ Radar oynat</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="cameraReplayStopBtn">■ Durdur</button>
+            </div>
+            <div id="cameraRadarCanvas" class="world-map" style="margin-bottom:12px"><p class="hint">Radar önizleme</p></div>
+            <p id="cameraReplayStatus" class="hint"></p>
+            <div id="cameraLogsTable"><p class="hint">Yükleniyor...</p></div>
+          </div>
+        </section>
+
+        <section id="page-events" class="page">
+          <div class="panel-card">
+            <h3>Ekonomi Olayı Tetikle</h3>
+            <p class="hint">/ekonomi olay komutu ile aynı</p>
+            <label>Olay Tipi</label><select id="eventSelect"></select>
+            <label>Süre (saniye)</label><input id="eventDuration" type="number" min="10" max="3600" value="300">
+            <button class="btn btn-gold btn-block" id="eventTriggerBtn">Olayı Tetikle</button>
+          </div>
+        </section>
+
+        <section id="page-mbop" class="page">
+          <div class="grid-2">
+            <div class="panel-card">
+              <h3>MB Yetkisi Ver</h3>
+              <label>Oyuncu</label><input id="mbopGrantPlayer" placeholder="Oyuncu adı">
+              <button class="btn btn-success btn-block" id="mbopGrantBtn">Yetki Ver</button>
+            </div>
+            <div class="panel-card">
+              <h3>MB Yetkisi Al</h3>
+              <label>Oyuncu</label><input id="mbopRevokePlayer" placeholder="Oyuncu adı">
+              <button class="btn btn-danger btn-block" id="mbopRevokeBtn">Yetki Al</button>
+            </div>
+          </div>
+          <div class="panel-card">
+            <h3>Mevcut MB Yetkilileri</h3>
+            <div id="mbOfficials"></div>
+          </div>
+        </section>
+
+        <section id="page-blackmarket" class="page">
+          <div class="panel-card">
+            <h3>☠ Karaborsaya Özel Ürün Ekle</h3>
+            <p class="hint">İstediğiniz Minecraft itemini, istediğiniz fiyattan karaborsaya ekleyin. Tüm oyuncular alıp satabilir.</p>
+            <label>Ürün Adı</label><input id="bmName" placeholder="Örn: Kaçak Ejderha Yumurtası">
+            <label>Item ID</label><input id="bmItemId" placeholder="minecraft:dragon_egg">
+            <label>Taban Fiyat (MC)</label><input id="bmPrice" type="number" min="1" value="100">
+            <button class="btn btn-gold btn-block" id="bmAddBtn" style="margin-top:12px">Karaborsaya Ekle</button>
+          </div>
+          <div class="panel-card">
+            <h3>Mevcut Özel Ürünler</h3>
+            <div id="bmList"><p class="hint">Yükleniyor...</p></div>
+          </div>
+        </section>
+
+        <section id="page-tools" class="page">
+          <div class="panel-card">
+            <h3>Merkez Bankası Yapısını Yeniden Kur</h3>
+            <p class="hint">/merkezbanka kur — spawn bölgesinde yeniden inşa eder</p>
+            <button class="btn btn-danger" id="rebuildCbBtn">Yeniden Kur</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <script src="/dashboard/common.js"></script>
+  <script src="/dashboard/admin.js"></script>
+</body>
+</html>

@@ -1247,15 +1247,7 @@ public final class EconomyWebServer {
 		row.addProperty("priceMg", priceMg);
 		row.addProperty("valueMg", priceMg * amount);
 		row.add("history", history);
-		long changePct = 0;
-		if (history.size() >= 2) {
-			long first = history.get(0).getAsJsonObject().get("priceMg").getAsLong();
-			long last = history.get(history.size() - 1).getAsJsonObject().get("priceMg").getAsLong();
-			if (first > 0) {
-				changePct = Math.round((last - first) * 10000.0 / first);
-			}
-		}
-		row.addProperty("changeBps", changePct);
+		row.addProperty("changeBps", priceChangeBps(history, priceMg));
 		return row;
 	}
 
@@ -1276,16 +1268,20 @@ public final class EconomyWebServer {
 		row.addProperty("equityMg", pos.equityMg());
 		row.addProperty("valueMg", pos.equityMg());
 		row.add("history", history);
-		long changeBps = 0;
-		if (history.size() >= 2) {
-			long first = history.get(0).getAsJsonObject().get("priceMg").getAsLong();
-			long last = history.get(history.size() - 1).getAsJsonObject().get("priceMg").getAsLong();
-			if (first > 0) {
-				changeBps = Math.round((last - first) * 10000.0 / first);
-			}
-		}
-		row.addProperty("changeBps", changeBps);
+		row.addProperty("changeBps", priceChangeBps(history, pos.currentPriceMg()));
 		return row;
+	}
+
+	/** Gecmis penceresinde en eski fiyat -> guncel fiyat (basis points). */
+	private static long priceChangeBps(JsonArray history, long currentPriceMg) {
+		if (history == null || history.isEmpty() || currentPriceMg <= 0) {
+			return 0;
+		}
+		long oldestPrice = history.get(0).getAsJsonObject().get("priceMg").getAsLong();
+		if (oldestPrice <= 0) {
+			return 0;
+		}
+		return Math.round((currentPriceMg - oldestPrice) * 10000.0 / oldestPrice);
 	}
 
 	private JsonArray loadHistory(String type, String symbol, int limit) {

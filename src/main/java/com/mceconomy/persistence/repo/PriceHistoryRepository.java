@@ -29,12 +29,15 @@ public final class PriceHistoryRepository {
 		}
 	}
 
+	/** Son {@code limit} kayit, zaman sirasina gore eskiden yeniye (grafik ve degisim yuzdesi icin). */
 	public List<Map<String, Object>> loadRecent(String symbolType, String symbol, int limit) throws SQLException {
 		List<Map<String, Object>> rows = new ArrayList<>();
 		try (PreparedStatement ps = connection.prepareStatement("""
-				SELECT price_mg, recorded_at FROM price_history
-				WHERE symbol_type = ? AND symbol = ?
-				ORDER BY recorded_at DESC LIMIT ?
+				SELECT price_mg, recorded_at FROM (
+					SELECT price_mg, recorded_at FROM price_history
+					WHERE symbol_type = ? AND symbol = ?
+					ORDER BY recorded_at DESC LIMIT ?
+				) ORDER BY recorded_at ASC
 				""")) {
 			ps.setString(1, symbolType);
 			ps.setString(2, symbol);

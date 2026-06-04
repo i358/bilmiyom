@@ -68,6 +68,10 @@ public final class ExchangeToken {
 		circulating = Math.max(0, circulating - amount);
 	}
 
+	public void setCirculating(int circulating) {
+		this.circulating = Math.max(0, Math.min(totalSupply, circulating));
+	}
+
 	public long priceMg() {
 		return priceMg;
 	}

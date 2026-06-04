@@ -36,4 +36,8 @@ public final class CreditScore {
 	public void adjust(int delta) {
 		score = EconomyMath.clampCreditScore(score + delta);
 	}
+
+	public void setScore(int newScore) {
+		score = EconomyMath.clampCreditScore(newScore);
+	}
 }

@@ -77,6 +77,9 @@ public final class EconomyWebServer {
 			server.createContext("/api/admin/overview", this::handleAdminOverview);
 			server.createContext("/api/admin/report", this::handleAdminReport);
 			server.createContext("/api/admin/players", this::handleAdminPlayers);
+			server.createContext("/api/admin/player", this::handleAdminPlayer);
+			server.createContext("/api/admin/economy/catalog", this::handleAdminEconomyCatalog);
+			server.createContext("/api/admin/config", this::handleAdminConfig);
 			server.createContext("/api/admin/appeals", this::handleAdminAppeals);
 			server.createContext("/api/admin/appeals/accept", this::handleAppealAccept);
 			server.createContext("/api/admin/appeals/reject", this::handleAppealReject);
@@ -582,6 +585,46 @@ public final class EconomyWebServer {
 					longVal(body, "id", -1), true, text(body, "note"));
 			case "trade/dispute/dismiss" -> DashboardActionService.tradeDisputeResolve(adminName,
 					longVal(body, "id", -1), false, text(body, "note"));
+			case "player/wallet/set" -> AdminEconomyService.walletSet(text(body, "player"), text(body, "uuid"),
+					displayMcVal(body, 0));
+			case "player/wallet/adjust" -> AdminEconomyService.walletAdjust(text(body, "player"), text(body, "uuid"),
+					displayMcVal(body, 0));
+			case "player/dirty/set" -> AdminEconomyService.dirtySet(text(body, "player"), text(body, "uuid"),
+					displayMcVal(body, 0));
+			case "player/bank/set" -> AdminEconomyService.bankSet(text(body, "player"), text(body, "uuid"),
+					text(body, "type"), displayMcVal(body, 0));
+			case "player/bank/open-checking" -> AdminEconomyService.bankOpenChecking(text(body, "player"),
+					text(body, "uuid"));
+			case "player/bank/open-term" -> AdminEconomyService.bankOpenTerm(text(body, "player"), text(body, "uuid"));
+			case "player/bank/delete" -> AdminEconomyService.bankDelete(text(body, "player"), text(body, "uuid"),
+					text(body, "type"));
+			case "player/profile/update" -> AdminEconomyService.profileUpdate(text(body, "player"), text(body, "uuid"),
+					body);
+			case "player/loan/upsert" -> AdminEconomyService.loanUpsert(text(body, "player"), text(body, "uuid"),
+					displayMcVal(body, 0), displayMcVal(body, "installmentMc", 0), longVal(body, "dueAt", 0));
+			case "player/loan/delete" -> AdminEconomyService.loanDelete(text(body, "player"), text(body, "uuid"));
+			case "player/shares/set" -> AdminEconomyService.sharesSet(text(body, "player"), text(body, "uuid"),
+					text(body, "ticker"), intVal(body, "amount", 0));
+			case "player/tokens/set" -> AdminEconomyService.tokensSet(text(body, "player"), text(body, "uuid"),
+					text(body, "symbol"), intVal(body, "amount", 0));
+			case "player/leverage/close" -> AdminEconomyService.leverageClose(intVal(body, "positionId", -1));
+			case "player/private-deposit/set" -> AdminEconomyService.privateDepositSet(text(body, "player"),
+					text(body, "uuid"), text(body, "bankName"), displayMcVal(body, 0));
+			case "economy/central-bank/update" -> AdminEconomyService.centralBankUpdate(body);
+			case "economy/company/create" -> AdminEconomyService.companyCreate(text(body, "name"),
+					text(body, "owner"), text(body, "ticker"), displayMcVal(body, "treasuryMc", 0),
+					body.has("listed") && body.get("listed").getAsBoolean());
+			case "economy/company/update" -> AdminEconomyService.companyUpdate(text(body, "name"),
+					body.has("treasuryMc") ? displayMcVal(body, "treasuryMc", 0) : null,
+					text(body, "ticker"), body.has("listed") ? body.get("listed").getAsBoolean() : null);
+			case "economy/company/delist" -> AdminEconomyService.companyDelist(text(body, "name"));
+			case "economy/token/create" -> AdminEconomyService.tokenCreate(text(body, "symbol"),
+					text(body, "displayName"), intVal(body, "supply", 0), displayMcVal(body, "priceMc", 0));
+			case "economy/token/update" -> AdminEconomyService.tokenUpdate(text(body, "symbol"),
+					body.has("priceMc") ? displayMcVal(body, "priceMc", 0) : null,
+					body.has("circulating") ? intVal(body, "circulating", 0) : null);
+			case "economy/token/delete" -> AdminEconomyService.tokenDelete(text(body, "symbol"));
+			case "config/save" -> AdminEconomyService.configSave(text(body, "json"));
 			default -> ActionResult.fail("Bilinmeyen admin işlemi: " + action);
 		};
 	}
@@ -638,6 +681,143 @@ public final class EconomyWebServer {
 		JsonObject wrapper = new JsonObject();
 		wrapper.add("players", players);
 		sendJson(exchange, 200, wrapper);
+	}
+
+	private void handleAdminPlayer(HttpExchange exchange) throws IOException {
+		if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+			sendJson(exchange, 405, error("method", "GET gerekli"));
+			return;
+		}
+		Optional<WebSession> session = requireOp(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
+			return;
+		}
+		String query = exchange.getRequestURI().getQuery();
+		String name = queryParam(query, "name");
+		String uuidStr = queryParam(query, "uuid");
+		UUID uuid = null;
+		if (uuidStr != null && !uuidStr.isBlank()) {
+			try {
+				uuid = UUID.fromString(uuidStr.trim());
+			} catch (IllegalArgumentException ignored) {
+				sendJson(exchange, 400, error("invalid", "Geçersiz UUID"));
+				return;
+			}
+		} else if (name != null && !name.isBlank()) {
+			PlayerEconomyProfile profile = findProfileByName(name);
+			if (profile == null) {
+				sendJson(exchange, 404, error("not_found", "Oyuncu bulunamadı"));
+				return;
+			}
+			uuid = profile.uuid();
+		} else {
+			sendJson(exchange, 400, error("invalid", "name veya uuid gerekli"));
+			return;
+		}
+		JsonObject detail = buildAdminPlayerDetail(uuid);
+		if (!detail.has("name")) {
+			sendJson(exchange, 404, error("not_found", "Oyuncu bulunamadı"));
+			return;
+		}
+		sendJson(exchange, 200, detail);
+	}
+
+	private void handleAdminConfig(HttpExchange exchange) throws IOException {
+		Optional<WebSession> session = requireOp(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
+			return;
+		}
+		if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+			sendJson(exchange, 405, error("method", "GET gerekli"));
+			return;
+		}
+		ActionResult result = AdminEconomyService.configRead();
+		if (!result.success()) {
+			sendJson(exchange, 400, result.toJson());
+			return;
+		}
+		sendJson(exchange, 200, result.data());
+	}
+
+	private void handleAdminEconomyCatalog(HttpExchange exchange) throws IOException {
+		if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+			sendJson(exchange, 405, error("method", "GET gerekli"));
+			return;
+		}
+		Optional<WebSession> session = requireOp(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
+			return;
+		}
+		var manager = McEconomyMod.getEconomyManager();
+		double index = manager.marketService().economyIndex().calculate();
+		JsonObject data = new JsonObject();
+
+		JsonArray companies = new JsonArray();
+		for (Company company : manager.companyManager().allCompanies()) {
+			JsonObject row = new JsonObject();
+			row.addProperty("name", company.name());
+			row.addProperty("ticker", company.ticker());
+			row.addProperty("listed", company.listedOnExchange());
+			row.addProperty("treasuryMg", company.treasury());
+			row.addProperty("treasury", GoldStandard.formatMilligrams(company.treasury()));
+			row.addProperty("sharePriceMg", company.sharePrice(index));
+			row.addProperty("ownerUuid", company.ownerUuid().toString());
+			companies.add(row);
+		}
+		data.add("companies", companies);
+
+		JsonArray tokens = new JsonArray();
+		for (ExchangeToken token : manager.exchangeService().allTokens()) {
+			JsonObject row = new JsonObject();
+			row.addProperty("symbol", token.symbol());
+			row.addProperty("displayName", token.displayName());
+			row.addProperty("priceMg", token.priceMg());
+			row.addProperty("circulating", token.circulating());
+			row.addProperty("totalSupply", token.totalSupply());
+			tokens.add(row);
+		}
+		data.add("tokens", tokens);
+
+		JsonArray privateBanks = new JsonArray();
+		for (PrivateBank bank : manager.privateBankService().allBanks()) {
+			JsonObject row = new JsonObject();
+			row.addProperty("name", bank.name());
+			privateBanks.add(row);
+		}
+		data.add("privateBanks", privateBanks);
+
+		var cb = manager.centralBank();
+		if (cb != null) {
+			JsonObject macro = new JsonObject();
+			macro.addProperty("baseRate", cb.getBaseRate());
+			macro.addProperty("inflationRate", cb.getInflationRate());
+			macro.addProperty("economyIndex", cb.getEconomyIndex());
+			macro.addProperty("goldFactor", cb.getGoldFactor());
+			macro.addProperty("moneySupply", cb.getMoneySupply());
+			macro.addProperty("municipalBudgetMg", cb.getMunicipalBudgetMg());
+			macro.addProperty("municipalBudgetMc", cb.getMunicipalBudgetMg() / 1000.0);
+			data.add("centralBank", macro);
+		}
+		sendJson(exchange, 200, data);
+	}
+
+	private static String queryParam(String query, String key) {
+		if (query == null || query.isBlank()) {
+			return null;
+		}
+		for (String part : query.split("&")) {
+			int eq = part.indexOf('=');
+			if (eq <= 0) {
+				continue;
+			}
+			if (part.substring(0, eq).equals(key)) {
+				return java.net.URLDecoder.decode(part.substring(eq + 1), StandardCharsets.UTF_8);
+			}
+		}
+		return null;
 	}
 
 	private JsonObject buildCatalog() {
@@ -1493,6 +1673,82 @@ public final class EconomyWebServer {
 		return data;
 	}
 
+	private JsonObject buildAdminPlayerDetail(UUID uuid) {
+		JsonObject data = buildPortfolio(uuid);
+		if (!data.has("name")) {
+			return data;
+		}
+		var manager = McEconomyMod.getEconomyManager();
+		data.addProperty("uuid", uuid.toString());
+
+		manager.bankService().getTerm(uuid).ifPresent(term -> {
+			data.addProperty("hasTerm", true);
+			data.addProperty("termBalanceMg", term.balance());
+			data.addProperty("termBalance", GoldStandard.formatMilligrams(term.balance()));
+			data.addProperty("termInterestRate", term.interestRate());
+			data.addProperty("termMaturesAt", term.maturesAt());
+		});
+		if (!data.has("hasTerm")) {
+			data.addProperty("hasTerm", false);
+			data.addProperty("termBalanceMg", 0);
+		}
+
+		manager.loanManager().getLoan(uuid).ifPresent(loan -> {
+			if (data.has("loan")) {
+				data.getAsJsonObject("loan").addProperty("dueAt", loan.dueAt());
+				data.getAsJsonObject("loan").addProperty("interestRate", loan.interestRate());
+			}
+		});
+
+		JsonArray allPrivateDeposits = new JsonArray();
+		for (PrivateBank bank : manager.privateBankService().allBanks()) {
+			long dep = manager.privateBankService().customerBalance(uuid, bank);
+			JsonObject row = new JsonObject();
+			row.addProperty("bank", bank.name());
+			row.addProperty("balanceMg", dep);
+			row.addProperty("balance", GoldStandard.formatMilligrams(dep));
+			allPrivateDeposits.add(row);
+		}
+		data.add("allPrivateDeposits", allPrivateDeposits);
+
+		JsonArray allShares = new JsonArray();
+		double index = manager.marketService().economyIndex().calculate();
+		for (Company company : manager.companyManager().allCompanies()) {
+			int amount = manager.companyManager().getShareCount(uuid, company);
+			if (amount <= 0) {
+				continue;
+			}
+			JsonObject row = new JsonObject();
+			row.addProperty("ticker", company.ticker() != null ? company.ticker() : company.name());
+			row.addProperty("name", company.name());
+			row.addProperty("amount", amount);
+			row.addProperty("priceMg", company.sharePrice(index));
+			allShares.add(row);
+		}
+		data.add("allShares", allShares);
+
+		JsonArray allTokens = new JsonArray();
+		for (ExchangeToken token : manager.exchangeService().allTokens()) {
+			int amount = manager.exchangeService().tokenBalance(uuid, token);
+			if (amount <= 0) {
+				continue;
+			}
+			JsonObject row = new JsonObject();
+			row.addProperty("symbol", token.symbol());
+			row.addProperty("displayName", token.displayName());
+			row.addProperty("amount", amount);
+			row.addProperty("priceMg", token.priceMg());
+			allTokens.add(row);
+		}
+		data.add("allTokens", allTokens);
+
+		PlayerEconomyProfile adminProfile = manager.profiles().get(uuid);
+		if (adminProfile != null) {
+			data.addProperty("mbOfficial", adminProfile.centralBankOfficial());
+		}
+		return data;
+	}
+
 	private Optional<WebSession> requireSession(HttpExchange exchange) {
 		return sessionManager.get(bearer(exchange));
 	}
@@ -1568,6 +1824,13 @@ public final class EconomyWebServer {
 		}
 		if (obj.has("grams") && !obj.get("grams").isJsonNull()) {
 			return obj.get("grams").getAsLong();
+		}
+		return defaultVal;
+	}
+
+	private static long displayMcVal(JsonObject obj, String key, long defaultVal) {
+		if (obj.has(key) && !obj.get(key).isJsonNull()) {
+			return obj.get(key).getAsLong();
 		}
 		return defaultVal;
 	}

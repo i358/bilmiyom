@@ -83,4 +83,8 @@ public final class BankAccount {
 			deposit(interest);
 		}
 	}
+
+	public void setBalance(long newBalance) {
+		balance = Math.max(0, newBalance);
+	}
 }

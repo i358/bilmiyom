@@ -217,4 +217,53 @@ public final class ExchangeService {
 	public String formatPrice(long mg) {
 		return GoldStandard.formatMilligrams(mg);
 	}
+
+	public boolean adminSetTokenHolding(UUID player, String symbol, int amount) throws SQLException {
+		ExchangeToken token = tokensBySymbol.get(symbol.toUpperCase());
+		if (token == null || amount < 0) {
+			return false;
+		}
+		Map<UUID, Integer> holdings = tokenHoldings.computeIfAbsent(token.id(), k -> new HashMap<>());
+		if (amount == 0) {
+			holdings.remove(player);
+		} else {
+			holdings.put(player, amount);
+		}
+		repository.saveHolding(token.id(), player, Math.max(0, amount));
+		return true;
+	}
+
+	public boolean adminUpdateToken(String symbol, Long priceMg, Integer circulating) throws SQLException {
+		ExchangeToken token = tokensBySymbol.get(symbol.toUpperCase());
+		if (token == null) {
+			return false;
+		}
+		if (priceMg != null) {
+			token.setPriceMg(priceMg);
+		}
+		if (circulating != null) {
+			token.setCirculating(circulating);
+		}
+		repository.saveToken(token);
+		return true;
+	}
+
+	public boolean adminDeleteToken(String symbol) throws SQLException {
+		ExchangeToken token = tokensBySymbol.get(symbol.toUpperCase());
+		if (token == null) {
+			return false;
+		}
+		Map<UUID, Integer> holdings = tokenHoldings.get(token.id());
+		if (holdings != null) {
+			for (Integer amt : holdings.values()) {
+				if (amt != null && amt > 0) {
+					return false;
+				}
+			}
+		}
+		tokensBySymbol.remove(symbol.toUpperCase());
+		tokenHoldings.remove(token.id());
+		repository.deleteToken(token.id());
+		return true;
+	}
 }

@@ -352,4 +352,27 @@ public final class BankService {
 			account.applyInterest(rate / EconomyConfig.interestIntervalTicks() * 20);
 		}
 	}
+
+	public boolean adminSetBalance(UUID owner, BankAccountType type, long balanceMg) throws SQLException {
+		BankAccount account = type == BankAccountType.CHECKING
+				? checkingAccounts.get(owner) : termAccounts.get(owner);
+		if (account == null) {
+			return false;
+		}
+		account.setBalance(balanceMg);
+		repository.save(account);
+		return true;
+	}
+
+	public boolean adminDeleteAccount(UUID owner, BankAccountType type) throws SQLException {
+		BankAccount account = type == BankAccountType.CHECKING
+				? checkingAccounts.remove(owner) : termAccounts.remove(owner);
+		if (account == null) {
+			return false;
+		}
+		if (account.id() > 0) {
+			repository.delete(account.id());
+		}
+		return true;
+	}
 }

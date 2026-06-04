@@ -388,3 +388,74 @@ tr:hover td { background: rgba(255,255,255,.02); }
   50% { opacity: 0.45; }
 }
 .bulletin-filter.active { color: var(--gold, #d4a843); border-color: var(--gold, #d4a843); }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+.modal-panel {
+  width: 100%;
+  max-width: 920px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h3 { margin: 0; color: var(--gold); }
+.modal-body { padding: 16px 20px 24px; }
+.tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.tab-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: .85rem;
+}
+.tab-btn.active { border-color: var(--gold); color: var(--gold); }
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.admin-form-grid label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+.admin-form-grid input, .admin-form-grid select {
+  width: 100%;
+  margin-bottom: 0;
+}
+.inline-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.config-editor {
+  width: 100%;
+  min-height: 420px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: .8rem;
+  line-height: 1.45;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  resize: vertical;
+}
+.panel-card code { color: var(--gold); font-size: .85rem; }

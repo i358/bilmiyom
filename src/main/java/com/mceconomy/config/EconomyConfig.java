@@ -15,7 +15,7 @@ public final class EconomyConfig {
 	private static EconomyConfigData data = new EconomyConfigData();
 
 	public static void load() {
-		Path path = Path.of("config", McEconomyMod.MOD_ID + ".json");
+		Path path = configPath();
 		if (Files.exists(path)) {
 			try (Reader reader = Files.newBufferedReader(path)) {
 				EconomyConfigData loaded = GSON.fromJson(reader, EconomyConfigData.class);
@@ -30,8 +30,16 @@ public final class EconomyConfig {
 		}
 	}
 
+	public static Path configPath() {
+		return Path.of("config", McEconomyMod.MOD_ID + ".json");
+	}
+
+	public static String configPathDisplay() {
+		return configPath().toString().replace('\\', '/');
+	}
+
 	public static void save() {
-		Path path = Path.of("config", McEconomyMod.MOD_ID + ".json");
+		Path path = configPath();
 		try {
 			Files.createDirectories(path.getParent());
 			try (Writer writer = Files.newBufferedWriter(path)) {
@@ -40,6 +48,39 @@ public final class EconomyConfig {
 		} catch (IOException e) {
 			McEconomyMod.LOGGER.error("Config kaydedilemedi", e);
 		}
+	}
+
+	/** OP panel: dosyadan ham JSON okur. */
+	public static String readRawJson() throws IOException {
+		Path path = configPath();
+		if (!Files.exists(path)) {
+			save();
+		}
+		return Files.readString(path);
+	}
+
+	/** OP panel: JSON parse edip bellege ve diske yazar. */
+	public static boolean applyRawJson(String json) {
+		if (json == null || json.isBlank()) {
+			return false;
+		}
+		try {
+			EconomyConfigData loaded = GSON.fromJson(json, EconomyConfigData.class);
+			if (loaded == null) {
+				return false;
+			}
+			data = loaded;
+			save();
+			return true;
+		} catch (com.google.gson.JsonSyntaxException e) {
+			McEconomyMod.LOGGER.warn("Config JSON gecersiz: {}", e.getMessage());
+			return false;
+		}
+	}
+
+	/** OP panel: mevcut ayarlari pretty JSON olarak dondurur. */
+	public static String toPrettyJson() {
+		return GSON.toJson(data);
 	}
 
 	public static long startingBalance() {

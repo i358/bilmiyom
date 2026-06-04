@@ -56,6 +56,10 @@ public final class Company {
 		treasury = Math.max(0, treasury - amount);
 	}
 
+	public void setTreasury(long treasury) {
+		this.treasury = Math.max(0, treasury);
+	}
+
 	public int outstandingShares() {
 		return outstandingShares;
 	}

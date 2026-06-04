@@ -216,4 +216,67 @@ public final class CompanyManager {
 		}
 		return companiesByTicker.get(nameOrTicker.toUpperCase());
 	}
+
+	public boolean adminSetShareCount(UUID player, String companyNameOrTicker, int amount) throws SQLException {
+		Company company = resolveCompany(companyNameOrTicker);
+		if (company == null || amount < 0) {
+			return false;
+		}
+		Map<UUID, ShareHolding> companyShares = shares.computeIfAbsent(company.id(), k -> new HashMap<>());
+		if (amount == 0) {
+			companyShares.remove(player);
+			repository.saveShare(new ShareHolding(company.id(), player, 0));
+			return true;
+		}
+		ShareHolding holding = companyShares.computeIfAbsent(player,
+				u -> new ShareHolding(company.id(), u, 0));
+		holding.setAmount(amount);
+		repository.saveShare(holding);
+		return true;
+	}
+
+	public boolean adminDelist(String companyName) throws SQLException {
+		Company company = companiesByName.get(companyName.toLowerCase());
+		if (company == null || !company.listedOnExchange()) {
+			return false;
+		}
+		if (company.ticker() != null) {
+			companiesByTicker.remove(company.ticker().toUpperCase());
+		}
+		company.delistFromExchange();
+		repository.save(company);
+		return true;
+	}
+
+	public boolean adminUpdateCompany(String companyName, Long treasuryMg, String ticker, Boolean listed)
+			throws SQLException {
+		Company company = companiesByName.get(companyName.toLowerCase());
+		if (company == null) {
+			return false;
+		}
+		if (treasuryMg != null) {
+			company.setTreasury(treasuryMg);
+		}
+		if (ticker != null && !ticker.isBlank()) {
+			String normalized = ticker.toUpperCase();
+			companiesByTicker.remove(company.ticker() != null ? company.ticker().toUpperCase() : "");
+			if (Boolean.TRUE.equals(listed) || company.listedOnExchange()) {
+				company.listOnExchange(normalized);
+				companiesByTicker.put(normalized, company);
+			}
+		}
+		if (listed != null) {
+			if (listed && company.ticker() != null) {
+				company.listOnExchange(company.ticker());
+				companiesByTicker.put(company.ticker().toUpperCase(), company);
+			} else if (!listed) {
+				if (company.ticker() != null) {
+					companiesByTicker.remove(company.ticker().toUpperCase());
+				}
+				company.delistFromExchange();
+			}
+		}
+		repository.save(company);
+		return true;
+	}
 }

@@ -88,4 +88,16 @@ public final class LoanRecord {
 	public boolean isPaidOff() {
 		return remaining <= 0;
 	}
+
+	public void setRemaining(long remaining) {
+		this.remaining = Math.max(0, remaining);
+	}
+
+	public void setInstallment(long installment) {
+		this.installment = Math.max(0, installment);
+	}
+
+	public void resetLateInterest() {
+		lateInterest = 0;
+	}
 }

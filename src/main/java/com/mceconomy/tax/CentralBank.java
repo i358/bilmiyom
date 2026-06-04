@@ -112,6 +112,10 @@ public final class CentralBank {
 		}
 	}
 
+	public void setMunicipalBudgetMg(long municipalBudgetMg) {
+		this.municipalBudgetMg = Math.max(0, municipalBudgetMg);
+	}
+
 	public boolean spendMunicipalBudget(long amount) {
 		if (amount <= 0 || municipalBudgetMg < amount) {
 			return false;

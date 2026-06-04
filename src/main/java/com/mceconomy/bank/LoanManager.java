@@ -97,6 +97,36 @@ public final class LoanManager {
 		return true;
 	}
 
+	public boolean adminUpsertLoan(UUID borrower, long remainingMg, long installmentMg, long dueAt, double interestRate)
+			throws SQLException {
+		if (remainingMg <= 0) {
+			return adminClearLoan(borrower);
+		}
+		LoanRecord loan = loans.get(borrower);
+		if (loan == null) {
+			loan = LoanRecord.create(borrower, remainingMg, installmentMg, dueAt, interestRate);
+			loan.setRemaining(remainingMg);
+			repository.save(loan);
+			loans.put(borrower, loan);
+		} else {
+			loan.setRemaining(remainingMg);
+			loan.setInstallment(installmentMg);
+			loan.setDueAt(dueAt);
+			loan.resetLateInterest();
+			repository.save(loan);
+		}
+		return true;
+	}
+
+	public boolean adminClearLoan(UUID borrower) throws SQLException {
+		if (!loans.containsKey(borrower)) {
+			return false;
+		}
+		loans.remove(borrower);
+		repository.delete(borrower);
+		return true;
+	}
+
 	public void processOverdueLoans(Map<UUID, PlayerEconomyProfile> profiles, ServerLevel level) throws SQLException {
 		long now = System.currentTimeMillis();
 		for (LoanRecord loan : loans.values()) {

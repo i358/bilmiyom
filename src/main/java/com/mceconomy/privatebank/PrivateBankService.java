@@ -158,4 +158,19 @@ public final class PrivateBankService {
 		Map<UUID, Long> bankDeposits = deposits.get(bank.id());
 		return bankDeposits != null ? bankDeposits.getOrDefault(customer, 0L) : 0;
 	}
+
+	public boolean adminSetDeposit(UUID customer, String bankName, long balanceMg) throws SQLException {
+		PrivateBank bank = banksByName.get(bankName.toLowerCase());
+		if (bank == null || balanceMg < 0) {
+			return false;
+		}
+		Map<UUID, Long> bankDeposits = deposits.computeIfAbsent(bank.id(), k -> new HashMap<>());
+		if (balanceMg == 0) {
+			bankDeposits.remove(customer);
+		} else {
+			bankDeposits.put(customer, balanceMg);
+		}
+		repository.saveDeposit(bank.id(), customer, balanceMg);
+		return true;
+	}
 }

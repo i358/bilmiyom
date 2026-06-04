@@ -29,4 +29,8 @@ public final class PlayerDirtyWallet {
 		balance -= amount;
 		return true;
 	}
+
+	public void setBalance(long newBalance) {
+		balance = Math.max(0, newBalance);
+	}
 }

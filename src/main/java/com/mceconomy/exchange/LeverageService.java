@@ -77,6 +77,19 @@ public final class LeverageService {
 				+ " " + leverage + "x, teminat " + GoldStandard.formatMilligrams(marginMg);
 	}
 
+	public synchronized boolean adminForceClose(int positionId) {
+		LeveragePosition pos = positions.stream()
+				.filter(p -> p.id() == positionId && p.isOpen())
+				.findFirst().orElse(null);
+		if (pos == null) {
+			return false;
+		}
+		long price = currentPrice(pos.symbol());
+		closeInternal(pos, pos.equityMg(price));
+		positions.removeIf(p -> p.id() == positionId);
+		return true;
+	}
+
 	public synchronized String closePosition(UUID owner, int positionId) {
 		LeveragePosition pos = positions.stream()
 				.filter(p -> p.id() == positionId && p.owner().equals(owner) && p.isOpen())

@@ -127,4 +127,15 @@ public final class ExchangeRepository {
 				rs.getLong("created_at")
 		);
 	}
+
+	public void deleteToken(int tokenId) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement("DELETE FROM token_holdings WHERE token_id = ?")) {
+			ps.setInt(1, tokenId);
+			ps.executeUpdate();
+		}
+		try (PreparedStatement ps = connection.prepareStatement("DELETE FROM exchange_tokens WHERE id = ?")) {
+			ps.setInt(1, tokenId);
+			ps.executeUpdate();
+		}
+	}
 }

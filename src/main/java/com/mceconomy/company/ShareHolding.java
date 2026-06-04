@@ -36,4 +36,8 @@ public final class ShareHolding {
 		amount -= count;
 		return true;
 	}
+
+	public void setAmount(int count) {
+		amount = Math.max(0, count);
+	}
 }

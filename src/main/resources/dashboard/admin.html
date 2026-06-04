@@ -29,6 +29,7 @@
         <div class="nav-group-title">Genel</div>
         <button class="nav-item active" data-page="dashboard"><span class="icon">📊</span> Özet</button>
         <button class="nav-item" data-page="players"><span class="icon">👥</span> Oyuncular</button>
+        <button class="nav-item" data-page="economy-admin"><span class="icon">💰</span> Ekonomi Yönetimi</button>
         <button class="nav-item" data-page="economy"><span class="icon">🏛</span> Merkez Bankası</button>
       </div>
       <div class="nav-group">
@@ -44,6 +45,7 @@
         <button class="nav-item" data-page="mbop"><span class="icon">🎖</span> MB Yetkileri</button>
         <button class="nav-item" data-page="blackmarket"><span class="icon">☠</span> Karaborsa</button>
         <button class="nav-item" data-page="tools"><span class="icon">🔧</span> Araçlar</button>
+        <button class="nav-item" data-page="config"><span class="icon">⚙</span> Config</button>
       </div>
       <div class="sidebar-footer">
         <a href="/" class="nav-item" style="text-decoration:none"><span class="icon">←</span> Oyuncu Paneli</a>
@@ -80,12 +82,42 @@
         <section id="page-players" class="page">
           <div class="panel-card">
             <h3>Tüm Oyuncular</h3>
+            <div class="form-row" style="margin-bottom:12px">
+              <input id="playerSearch" placeholder="Oyuncu ara..." style="flex:1">
+            </div>
             <div class="table-wrap">
               <table>
                 <thead><tr><th>Oyuncu</th><th>Cüzdan</th><th>Banka</th><th>Kara</th><th>Skor</th><th>Durum</th><th>İşlem</th></tr></thead>
                 <tbody id="playersTable"></tbody>
               </table>
             </div>
+          </div>
+        </section>
+
+        <section id="page-economy-admin" class="page">
+          <div class="tab-bar" id="globalTabBar">
+            <button class="tab-btn active" data-global-tab="macro">Merkez Bankası</button>
+            <button class="tab-btn" data-global-tab="companies">Şirketler</button>
+            <button class="tab-btn" data-global-tab="tokens">Coinler</button>
+          </div>
+          <div id="globalTab-macro" class="panel-card">
+            <h3>Makro Parametreler</h3>
+            <div class="admin-form-grid" id="macroForm"></div>
+            <button class="btn btn-gold" id="macroSaveBtn" style="margin-top:12px">Kaydet</button>
+          </div>
+          <div id="globalTab-companies" class="panel-card hidden">
+            <h3>Şirketler</h3>
+            <div id="globalCompaniesTable"></div>
+            <h4 style="margin-top:20px">Yeni Şirket</h4>
+            <div class="admin-form-grid" id="newCompanyForm"></div>
+            <button class="btn btn-gold" id="newCompanyBtn" style="margin-top:12px">Oluştur</button>
+          </div>
+          <div id="globalTab-tokens" class="panel-card hidden">
+            <h3>Coinler</h3>
+            <div id="globalTokensTable"></div>
+            <h4 style="margin-top:20px">Yeni Coin</h4>
+            <div class="admin-form-grid" id="newTokenForm"></div>
+            <button class="btn btn-gold" id="newTokenBtn" style="margin-top:12px">Oluştur</button>
           </div>
         </section>
 
@@ -222,9 +254,41 @@
             <button class="btn btn-danger" id="rebuildCbBtn">Yeniden Kur</button>
           </div>
         </section>
+
+        <section id="page-config" class="page">
+          <div class="panel-card">
+            <h3>Sunucu Config Dosyası</h3>
+            <p class="hint">Dosya: <code id="configPathLabel">config/mceconomy.json</code> — Geçerli JSON olmalı. Çoğu ayar anında uygulanır; <strong>webPort</strong> ve <strong>webBindAddress</strong> için sunucuyu yeniden başlatın.</p>
+            <div class="inline-actions" style="margin-bottom:12px">
+              <button class="btn btn-ghost btn-sm" id="configReloadBtn">Dosyadan Yükle</button>
+              <button class="btn btn-gold btn-sm" id="configSaveBtn">Kaydet</button>
+            </div>
+            <textarea id="configEditor" class="config-editor" spellcheck="false" placeholder="Yükleniyor..."></textarea>
+          </div>
+        </section>
       </div>
     </div>
   </div>
+
+  <div id="playerAdminModal" class="modal-overlay hidden">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <h3 id="playerAdminTitle">Oyuncu Yönetimi</h3>
+        <button class="btn btn-ghost btn-sm" id="playerAdminClose">✕ Kapat</button>
+      </div>
+      <div class="modal-body">
+        <div class="tab-bar" id="playerTabBar">
+          <button class="tab-btn active" data-player-tab="money">Para</button>
+          <button class="tab-btn" data-player-tab="profile">Profil</button>
+          <button class="tab-btn" data-player-tab="portfolio">Hisse & Coin</button>
+          <button class="tab-btn" data-player-tab="loan">Kredi</button>
+          <button class="tab-btn" data-player-tab="extra">Kaldıraç & Özel Banka</button>
+        </div>
+        <div id="playerTabContent"></div>
+      </div>
+    </div>
+  </div>
+
   <script src="/dashboard/common.js"></script>
   <script src="/dashboard/admin.js"></script>
 </body>

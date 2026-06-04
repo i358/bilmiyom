@@ -101,4 +101,11 @@ public final class BankRepository {
 				rs.getLong("matures_at")
 		);
 	}
+
+	public void delete(int accountId) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement("DELETE FROM bank_accounts WHERE id = ?")) {
+			ps.setInt(1, accountId);
+			ps.executeUpdate();
+		}
+	}
 }

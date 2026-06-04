@@ -139,4 +139,34 @@ public final class CurrencyService {
 		}
 		return true;
 	}
+
+	public boolean adminSetWallet(UUID uuid, long balanceMg) {
+		PlayerEconomyProfile profile = profiles.get(uuid);
+		if (profile == null) {
+			return false;
+		}
+		profile.wallet().setBalance(balanceMg);
+		ledger.record(null, uuid, Math.abs(balanceMg), TransactionType.ADMIN_OP, "wallet-set");
+		return true;
+	}
+
+	public boolean adminAdjustWallet(UUID uuid, long deltaMg) {
+		PlayerEconomyProfile profile = profiles.get(uuid);
+		if (profile == null) {
+			return false;
+		}
+		profile.wallet().setBalance(profile.wallet().balance() + deltaMg);
+		ledger.record(null, uuid, Math.abs(deltaMg), TransactionType.ADMIN_OP, "wallet-adjust");
+		return true;
+	}
+
+	public boolean adminSetDirty(UUID uuid, long balanceMg) {
+		PlayerEconomyProfile profile = profiles.get(uuid);
+		if (profile == null) {
+			return false;
+		}
+		profile.dirtyWallet().setBalance(balanceMg);
+		ledger.record(null, uuid, balanceMg, TransactionType.ADMIN_OP, "dirty-set");
+		return true;
+	}
 }

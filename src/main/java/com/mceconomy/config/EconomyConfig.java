@@ -244,6 +244,80 @@ public final class EconomyConfig {
 		return data.centralBankElevationBlocks;
 	}
 
+	public static int centralBankSpawnDistanceBlocks() {
+		return data.centralBankSpawnDistanceBlocks;
+	}
+
+	public static int maxPropertiesPerPlayer() {
+		return data.maxPropertiesPerPlayer;
+	}
+
+	public static int maxVehiclesPerPlayer() {
+		return data.maxVehiclesPerPlayer;
+	}
+
+	public static int maxCompaniesPerPlayer() {
+		return data.maxCompaniesPerPlayer;
+	}
+
+	public static int maxServerBuiltPlots() {
+		return data.maxServerBuiltPlots;
+	}
+
+	public static int structureBuildBlocksPerTick() {
+		return data.structureBuildBlocksPerTick;
+	}
+
+	public static int maxPendingStructureJobs() {
+		return data.maxPendingStructureJobs;
+	}
+
+	public static int structureChunkLoadRadius() {
+		return data.structureChunkLoadRadius;
+	}
+
+	public static int maxActiveVehicles() {
+		return data.maxActiveVehicles;
+	}
+
+	public static long vehicleFuelCostPerSecondMg() {
+		return data.vehicleFuelCostPerSecondMg;
+	}
+
+	public static int maxEconomyMinisters() {
+		return data.maxEconomyMinisters;
+	}
+
+	public static long propertyCottagePriceMg() {
+		return data.propertyCottagePriceMg;
+	}
+
+	public static long propertyHousePriceMg() {
+		return data.propertyHousePriceMg;
+	}
+
+	public static long propertyVillaPriceMg() {
+		return data.propertyVillaPriceMg;
+	}
+
+	public static double propertyTaxRate() {
+		return data.propertyTaxRate;
+	}
+
+	public static void setIncomeTaxRate(double rate) {
+		data.incomeTaxRate = rate;
+		save();
+	}
+
+	public static void setCityTaxRate(double rate) {
+		data.cityTaxRate = rate;
+		save();
+	}
+
+	public static long vehiclePurchasePriceMg() {
+		return data.vehiclePurchasePriceMg;
+	}
+
 	public static boolean masakEnabled() {
 		return data.masakEnabled;
 	}
@@ -635,9 +709,93 @@ public final class EconomyConfig {
 		return data.targetGoldReserveCoverage;
 	}
 
+	public static double fiatWeightGold() {
+		return data.fiatWeightGold;
+	}
+
+	public static double fiatWeightState() {
+		return data.fiatWeightState;
+	}
+
+	public static double fiatWeightInvestment() {
+		return data.fiatWeightInvestment;
+	}
+
+	public static double fiatStrengthMin() {
+		return data.fiatStrengthMin;
+	}
+
+	public static double fiatStrengthMax() {
+		return data.fiatStrengthMax;
+	}
+
+	public static double fiatBudgetSupplyRatio() {
+		return data.fiatBudgetSupplyRatio;
+	}
+
+	public static double fiatInvestmentSupplyRatio() {
+		return data.fiatInvestmentSupplyRatio;
+	}
+
+	public static double fiatInflationStabilityFactor() {
+		return data.fiatInflationStabilityFactor;
+	}
+
+	public static double fiatShockDecayPerTick() {
+		return data.fiatShockDecayPerTick;
+	}
+
+	public static double fiatPhysicalGoldWeight() {
+		return data.fiatPhysicalGoldWeight;
+	}
+
+	public static double fiatGoldDeficitBump() {
+		return data.fiatGoldDeficitBump;
+	}
+
+	public static double fiatInflationGoldDriftUp() {
+		return data.fiatInflationGoldDriftUp;
+	}
+
+	public static double fiatInflationGoldDriftDown() {
+		return data.fiatInflationGoldDriftDown;
+	}
+
+	public static double fiatGoldFactorMin() {
+		return data.fiatGoldFactorMin;
+	}
+
+	public static double fiatGoldFactorMax() {
+		return data.fiatGoldFactorMax;
+	}
+
+	public static double fiatGoldFactorSmoothing() {
+		return data.fiatGoldFactorSmoothing;
+	}
+
+	public static double fiatBaseGlobalMultiplier() {
+		return data.fiatBaseGlobalMultiplier;
+	}
+
+	public static double fiatGlobalMultiplierSmoothing() {
+		return data.fiatGlobalMultiplierSmoothing;
+	}
+
+	public static double fiatGlobalMultiplierMin() {
+		return data.fiatGlobalMultiplierMin;
+	}
+
+	public static double fiatGlobalMultiplierMax() {
+		return data.fiatGlobalMultiplierMax;
+	}
+
+	public static double robberyFiatShockPenalty() {
+		return data.robberyFiatShockPenalty;
+	}
+
 	public static final class EconomyConfigData {
-		/** Başlangıç cüzdan bakiyesi (altın miligramı). 0 = fiziksel altın ile başla. */
-		public long startingBalance = 0;
+		/** Başlangıç cüzdan (dahili mg). 1000 mg = 1 $ goruntuleme. 100_000_000 = 100.000 $. */
+		public long startingBalance = 100_000_000L;
 		public boolean spawnBankEnabled = true;
 		public boolean spawnBankBuilt = false;
 		public int bankOriginX = -1;
@@ -645,9 +803,47 @@ public final class EconomyConfig {
 		public int bankOriginZ = -1;
 		/** Para arzinin en az bu kadari fiziksel altin rezervi ile desteklenmeli (0.08 = %8). */
 		public double targetGoldReserveCoverage = 0.08;
+		/** Fiat: altin destegi / devlet guveni / yatirim agirliklari (toplam ~1). */
+		public double fiatWeightGold = 0.25;
+		public double fiatWeightState = 0.40;
+		public double fiatWeightInvestment = 0.35;
+		public double fiatStrengthMin = 0.55;
+		public double fiatStrengthMax = 1.45;
+		public double fiatBudgetSupplyRatio = 0.02;
+		public double fiatInvestmentSupplyRatio = 0.15;
+		public double fiatInflationStabilityFactor = 6.0;
+		public double fiatShockDecayPerTick = 0.92;
+		public double fiatPhysicalGoldWeight = 0.25;
+		public double fiatGoldDeficitBump = 0.12;
+		public double fiatInflationGoldDriftUp = 0.5;
+		public double fiatInflationGoldDriftDown = 0.2;
+		public double fiatGoldFactorMin = 0.85;
+		public double fiatGoldFactorMax = 2.5;
+		public double fiatGoldFactorSmoothing = 0.15;
+		public double fiatBaseGlobalMultiplier = 1.0;
+		public double fiatGlobalMultiplierSmoothing = 0.08;
+		public double fiatGlobalMultiplierMin = 0.5;
+		public double fiatGlobalMultiplierMax = 3.0;
+		public double robberyFiatShockPenalty = 0.12;
 		public int spawnBankOffsetX = 24;
 		public int spawnBankOffsetZ = 0;
 		public int centralBankElevationBlocks = 36;
+		public int centralBankSpawnDistanceBlocks = 400;
+		public int maxPropertiesPerPlayer = 1;
+		public int maxVehiclesPerPlayer = 1;
+		public int maxCompaniesPerPlayer = 2;
+		public int maxServerBuiltPlots = 48;
+		public int structureBuildBlocksPerTick = 400;
+		public int maxPendingStructureJobs = 2;
+		public int structureChunkLoadRadius = 96;
+		public int maxActiveVehicles = 16;
+		public long vehicleFuelCostPerSecondMg = 500;
+		public int maxEconomyMinisters = 3;
+		public long propertyCottagePriceMg = 2_000_000;
+		public long propertyHousePriceMg = 8_000_000;
+		public long propertyVillaPriceMg = 25_000_000;
+		public double propertyTaxRate = 0.01;
+		public long vehiclePurchasePriceMg = 1_500_000;
 		public boolean masakEnabled = true;
 		public long masakTransferWindowMs = 600_000;
 		public int masakMaxTransfersInWindow = 5;
@@ -656,9 +852,9 @@ public final class EconomyConfig {
 		public int masakCreditPenalty = 15;
 		public int masakBlackMarketThreshold = 8;
 		public int masakLaunderAttemptThreshold = 3;
-		public double launderBaseDetectionRisk = 0.12;
-		public double launderRiskPer100Grams = 0.03;
-		public double launderRepeatRiskBonus = 0.05;
+		public double launderBaseDetectionRisk = 0.012;
+		public double launderRiskPer100Grams = 0.003;
+		public double launderRepeatRiskBonus = 0.005;
 		public double launderFinePercent = 0.50;
 		public double launderServiceFeePercent = 0.08;
 		public double blackMarketSellMultiplier = 0.85;
@@ -700,8 +896,8 @@ public final class EconomyConfig {
 		public long robberyShockReferenceMg = 50_000_000;
 		public double robberyInflationBump = 0.04;
 		public double blackMarketSmeltCommission = 0.02;
-		public double goldSmeltBaseRisk = 0.08;
-		public double goldSmeltRiskPer100Grams = 0.04;
+		public double goldSmeltBaseRisk = 0.008;
+		public double goldSmeltRiskPer100Grams = 0.004;
 		public int goldSmeltCaughtPrisonMinutes = 8;
 		public double launderInflationBump = 0.06;
 		public double launderRateBump = 0.012;

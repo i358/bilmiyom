@@ -1,24 +1,24 @@
 const DOCS_HTML = `
 <h2>📖 MC Economy Rehberi</h2>
-<p class="hint">Bu panel ve oyun içi komutlarla işleyen, altın destekli gerçekçi bir ekonomi simülasyonudur. Para birimi <strong>MC (Minecraft Coins)</strong>'tir. 1 MC ≈ 1 gram altın değerindedir; enflasyon arttıkça paranın altına karşı değeri düşer (altın külçesi pahalanır).</p>
+<p class="hint">Bu panel ve oyun içi komutlarla işleyen, fiat + kısmi altın destekli bir ekonomi simülasyonudur. Para birimi <strong>$ (dolar)</strong>dır. Yeni oyuncular <strong>100.000 $</strong> ile başlar. MC değeri yalnızca altına değil; devlet güveni ve yatırımlara da bağlıdır (<code>/para durum</code>).</p>
 
 <div class="doc-section">
-  <h3>💰 Para Birimi ve Altın Standardı</h3>
+  <h3>💰 Para Birimi</h3>
   <ul>
-    <li><strong>MC (Minecraft Coins):</strong> Tüm bakiyeler, fiyatlar ve maaşlar MC cinsindendir.</li>
-    <li><strong>Altın Külçesi:</strong> Fiziksel değer saklama aracıdır. Bankaya külçe yatırıp MC'ye çevirebilirsiniz.</li>
-    <li><strong>Enflasyon Koruması:</strong> Enflasyon yükseldikçe 1 külçenin MC değeri artar. Yani altın tutmak, paranızı enflasyona karşı korur — tıpkı gerçek hayatta olduğu gibi.</li>
+    <li><strong>$ (Dolar):</strong> Tüm bakiyeler, fiyatlar ve maaşlar dolar cinsindendir.</li>
+    <li><strong>Altın Külçesi:</strong> Fiziksel değer saklama aracıdır. Bankaya külçe yatırıp $ bakiyesine çevirebilirsiniz.</li>
+    <li><strong>Fiat gücü:</strong> Belediye bütçesi, enflasyon istikrarı, borsa ve şirket yatırımları paranın gücünü etkiler.</li>
   </ul>
 </div>
 
 <div class="doc-section">
   <h3>🏦 Bankacılık</h3>
   <ul>
-    <li><strong>Cüzdan ↔ Banka:</strong> Cüzdanınızdaki MC'yi bankaya yatırıp faiz kazanın, dilediğinizde çekin.</li>
+    <li><strong>Cüzdan ↔ Banka:</strong> Cüzdanınızdaki $ bakiyesini bankaya yatırıp faiz kazanın, dilediğinizde çekin.</li>
     <li><strong>Vadesiz Hesap:</strong> Anında erişim, düşük faiz.</li>
     <li><strong>Vadeli Hesap:</strong> Daha yüksek faiz, vade boyunca kilitli.</li>
-    <li><strong>Fiziksel Altın:</strong> "Külçe Yatır" ile envanterinizdeki altın külçelerini güncel kur üzerinden MC'ye çevirin. "Külçe Çek" ile geri alın.</li>
-    <li><strong>Banka Transferi:</strong> Başka oyuncuya banka üzerinden MC gönderin.</li>
+    <li><strong>Fiziksel Altın:</strong> "Külçe Yatır" ile envanterinizdeki altın külçelerini güncel kur üzerinden $'a çevirin. "Külçe Çek" ile geri alın.</li>
+    <li><strong>Banka Transferi:</strong> Başka oyuncuya banka üzerinden $ gönderin.</li>
   </ul>
 </div>
 
@@ -33,7 +33,7 @@ const DOCS_HTML = `
 <div class="doc-section">
   <h3>🌾 Market (Ticarete Giriş)</h3>
   <ul>
-    <li><strong>Market Al:</strong> Buğday, altın gibi emtiaları MC ile satın alın.</li>
+    <li><strong>Market Al:</strong> Buğday, maden vb. emtiaları $ ile satın alın.</li>
     <li><strong>Market Sat:</strong> Envanterinizdeki emtiaları satın (oyunda çevrimiçi olmalısınız). Elinizde yeterli ürün yoksa işlem iptal edilir ve <em>hiçbir ürün alınmaz</em>.</li>
     <li><strong>Fiyatlar:</strong> Arz-talep ve enflasyona göre dinamik olarak değişir. Grafikler sekmesinden takip edin.</li>
     <li><strong>Kaldıraç grafikleri:</strong> Açık LONG/SHORT pozisyonlarınızın altında canlı coin fiyatı ve giriş fiyatı (kesikli çizgi) görünür; Grafikler → Kaldıraçlı Pozisyon.</li>
@@ -103,6 +103,18 @@ const DOCS_HTML = `
     <li>Hesabınız dondurulduysa veya kara listeye alındıysanız İtirazlar sekmesinden itiraz gönderin; OP'ler değerlendirir.</li>
     <li><strong>Adalet</strong> sekmesinden oyuncu şikayeti veya ihbar gönderebilirsiniz. Hapis cezası aldıysanız yasal ekonomi kapanır; süre bitince veya OP tahliye edince serbest kalırsınız.</li>
     <li>Oyun içi: <code>/sikayet</code>, <code>/ihbar</code>, <code>/hapishane durum</code></li>
+  </ul>
+</div>
+
+<div class="doc-section">
+  <h3>🖥 Panel ↔ Komut</h3>
+  <p class="hint">8 GB sunucu: <code>maxPropertiesPerPlayer=1</code>, <code>maxVehiclesPerPlayer=1</code>, yapı kuyruğu tick başına 400 blok.</p>
+  <ul>
+    <li><code>/ev al|tp|sat|liste</code> — Gayrimenkul (panel: Yatırım)</li>
+    <li><code>/araba al|cikar|liste</code> — Garaj (client+server mod, minecart yok)</li>
+    <li><code>/ekonomi bakan …</code> — Devlet / Bakanlık paneli</li>
+    <li><code>/sigorta</code>, <code>/takas</code>, <code>/lonca</code>, <code>/belediye</code> — Finans / Sosyal / Devlet sekmeleri</li>
+    <li><code>/ekonomi sifirla</code> — Yalnızca OP; panel: Araçlar → Tam sıfırlama (SIFIRLA)</li>
   </ul>
 </div>
 `;

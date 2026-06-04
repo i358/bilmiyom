@@ -50,6 +50,15 @@ public final class EconomyTickScheduler {
 			manager.syncHudForOnlinePlayers();
 			manager.onTrackedGoldTick();
 		}
+		if (tickCounter % 2 == 0) {
+			manager.onVehicleDriveTick();
+		}
+		if (tickCounter % 1 == 0) {
+			manager.onStructureBuildTick();
+		}
+		if (tickCounter % 1200 == 0) {
+			manager.onPropertyRentTick();
+		}
 		if (tickCounter % 600 == 0) {
 			manager.onPriceHistoryTick();
 		}

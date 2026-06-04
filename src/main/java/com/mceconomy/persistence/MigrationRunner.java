@@ -113,6 +113,100 @@ public final class MigrationRunner {
 			migrateV22();
 			setVersion(22);
 		}
+		if (current < 23) {
+			migrateV23();
+			setVersion(23);
+		}
+		if (current < 24) {
+			migrateV24();
+			setVersion(24);
+		}
+	}
+
+	private void migrateV24() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V24: konut, arac, sirket HQ, ekonomi bakani...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS player_properties (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						owner_uuid TEXT NOT NULL,
+						tier TEXT NOT NULL,
+						origin_x INTEGER NOT NULL,
+						origin_y INTEGER NOT NULL,
+						origin_z INTEGER NOT NULL,
+						purchased_at INTEGER NOT NULL
+					)
+					""");
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS player_vehicles (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						owner_uuid TEXT NOT NULL,
+						model TEXT NOT NULL,
+						garage_x INTEGER NOT NULL,
+						garage_y INTEGER NOT NULL,
+						garage_z INTEGER NOT NULL,
+						fuel REAL NOT NULL DEFAULT 100,
+						entity_uuid TEXT,
+						spawned INTEGER NOT NULL DEFAULT 0
+					)
+					""");
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS company_buildings (
+						company_id INTEGER PRIMARY KEY,
+						origin_x INTEGER NOT NULL,
+						origin_y INTEGER NOT NULL,
+						origin_z INTEGER NOT NULL
+					)
+					""");
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS economy_minister_applications (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						applicant_uuid TEXT NOT NULL,
+						applicant_name TEXT NOT NULL,
+						reason TEXT,
+						status TEXT NOT NULL,
+						created_at INTEGER NOT NULL
+					)
+					""");
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS economy_decrees (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						type TEXT NOT NULL,
+						payload_json TEXT NOT NULL,
+						status TEXT NOT NULL,
+						created_at INTEGER NOT NULL,
+						issued_by TEXT
+					)
+					""");
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE players ADD COLUMN economy_minister INTEGER NOT NULL DEFAULT 0");
+		} catch (SQLException ignored) {
+		}
+	}
+
+	private void migrateV23() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V23: fiat para (devlet guveni + yatirim)...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE central_bank ADD COLUMN fiat_strength REAL NOT NULL DEFAULT 1.0");
+		} catch (SQLException ignored) {
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE central_bank ADD COLUMN gold_backing_score REAL NOT NULL DEFAULT 0.5");
+		} catch (SQLException ignored) {
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE central_bank ADD COLUMN state_credibility_score REAL NOT NULL DEFAULT 0.5");
+		} catch (SQLException ignored) {
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE central_bank ADD COLUMN investment_score REAL NOT NULL DEFAULT 0.5");
+		} catch (SQLException ignored) {
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE central_bank ADD COLUMN fiat_shock_penalty REAL NOT NULL DEFAULT 0");
+		} catch (SQLException ignored) {
+		}
 	}
 
 	private void migrateV22() throws SQLException {

@@ -92,6 +92,11 @@ public final class CompanyCommand {
 		}
 		try {
 			if (manager.companyManager().createCompany(name, player.getUUID())) {
+				manager.companyManager().find(name).ifPresent(company -> {
+					manager.onCompanyCreated(company);
+					source.sendSuccess(() -> Component.literal(
+							"§7Sirket binasi insa edildi (spawn yakininda). Sandik: §e/sirket sandik"), false);
+				});
 				source.sendSuccess(() -> Messages.tr("command.mceconomy.company.created", name), false);
 				source.sendSuccess(() -> Component.literal(
 						"§7NPC'ler ve oyuncular is basvurusu yapabilir. §e/sirket basvurular | §e/is basvur"), false);

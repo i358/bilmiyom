@@ -38,6 +38,15 @@ public final class ModWorldResetService {
 	private ModWorldResetService() {
 	}
 
+	/** Tam ekonomi sifirlama: DB + dunya yapilari + MB yeniden kurulum. */
+	public static ResetReport fullEconomyReset(MinecraftServer server) {
+		return fullEconomyReset(server, null);
+	}
+
+	public static ResetReport fullEconomyReset(MinecraftServer server, ServerPlayer bankAnchor) {
+		return resetModStructures(server, bankAnchor);
+	}
+
 	public static ResetReport resetModStructures(MinecraftServer server) {
 		return resetModStructures(server, null);
 	}

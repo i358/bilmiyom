@@ -91,6 +91,8 @@ public final class AdminCommand {
 					return 1;
 				})));
 
+		EkonomiCommand.registerBakan(dispatcher);
+
 		dispatcher.register(literal("ekonomi")
 				.then(literal("sifirla")
 						.executes(ctx -> {
@@ -131,7 +133,8 @@ public final class AdminCommand {
 							+ report.prisonCellsCleared() + " hucre, "
 							+ report.entitiesRemoved() + " NPC silindi, "
 							+ report.prisonersReleased() + " mahkum tahliye. "
-							+ "Bakiye/borc/sirket verileri sifirlandi."), true);
+							+ "Bakiye/borc/sirket verileri sifirlandi. Para birimi: "
+							+ com.mceconomy.economy.GoldStandard.CURRENCY_NAME), true);
 			return 1;
 		} catch (Exception e) {
 			McEconomyMod.LOGGER.error("Mod dunya sifirlama", e);
@@ -145,7 +148,7 @@ public final class AdminCommand {
 		var market = McEconomyMod.getEconomyManager().marketService();
 		source.sendSuccess(() -> Messages.tr("command.mceconomy.centralbank.report"), false);
 		source.sendSuccess(() -> Component.literal(
-				"Para arzı: " + cb.getMoneySupply()
+				"Para arzi (" + com.mceconomy.economy.GoldStandard.CURRENCY_NAME + "): " + cb.getMoneySupply()
 						+ " | Endeks: " + String.format("%.2f", cb.getEconomyIndex())
 						+ " | Enflasyon: " + String.format("%.2f%%", cb.getInflationRate() * 100)
 						+ " | Faiz: " + String.format("%.2f%%", cb.getBaseRate() * 100)

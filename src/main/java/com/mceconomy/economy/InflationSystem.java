@@ -1,7 +1,10 @@
 package com.mceconomy.economy;
 
 import com.mceconomy.bank.BankService;
+import com.mceconomy.company.CompanyManager;
 import com.mceconomy.config.EconomyConfig;
+import com.mceconomy.exchange.ExchangeService;
+import com.mceconomy.exchange.ForeignInvestorMarketService;
 import com.mceconomy.market.EconomyIndex;
 import com.mceconomy.market.MarketPriceEngine;
 import com.mceconomy.player.PlayerEconomyProfile;
@@ -16,37 +19,28 @@ public final class InflationSystem {
 
 	public void update(CentralBank centralBank, BankService bankService,
 			Map<UUID, PlayerEconomyProfile> profiles, EconomyIndex economyIndex,
-			MarketPriceEngine priceEngine, GoldReserveService goldReserve) {
+			MarketPriceEngine priceEngine, GoldReserveService goldReserve,
+			ExchangeService exchangeService, CompanyManager companyManager,
+			ForeignInvestorMarketService foreignInvestors) {
 		long walletTotal = profiles.values().stream()
 				.mapToLong(p -> p.wallet().balance())
 				.sum();
-		long moneySupply = walletTotal + bankService.totalBankBalance();
-		centralBank.updateMoneySupply(moneySupply);
 
 		double currentIndex = economyIndex.calculate();
 		centralBank.setEconomyIndex(currentIndex);
 
+		double inflation = 0;
 		if (previousIndex > 0) {
-			double inflation = (currentIndex - previousIndex) / previousIndex;
+			inflation = (currentIndex - previousIndex) / previousIndex;
 			centralBank.setInflationRate(inflation);
 			centralBank.adjustBaseRate(EconomyConfig.targetInflationRate(), inflation);
-
-			if (inflation > EconomyConfig.targetInflationRate() + 0.05) {
-				priceEngine.setGlobalMultiplier(priceEngine.globalMultiplier() * 1.02);
-			} else if (inflation < EconomyConfig.targetInflationRate() - 0.05) {
-				priceEngine.setGlobalMultiplier(priceEngine.globalMultiplier() * 0.98);
-			}
-
-			// Enflasyon pozitifken altinin MC degeri yukselir (para altina karsi deger kaybeder).
-			// Deflasyonda sinirli olcude geri gelir. Faktor 1.0'in altina dusmez.
-			double drift = inflation > 0 ? inflation * 0.5 : inflation * 0.2;
-			double newFactor = Math.max(1.0, centralBank.getGoldFactor() * (1 + drift));
-			centralBank.setGoldFactor(newFactor);
-			GoldStandard.setGoldFactor(newFactor);
 		}
+
+		FiatMonetarySystem.update(centralBank, bankService, walletTotal, inflation, priceEngine,
+				goldReserve, exchangeService, companyManager, foreignInvestors);
+
 		if (goldReserve != null) {
-			goldReserve.applyReservePressure(centralBank, moneySupply);
-			applyReserveBonus(centralBank, goldReserve, moneySupply);
+			applyReserveBonus(centralBank, goldReserve, centralBank.getMoneySupply());
 		}
 		previousIndex = currentIndex;
 	}

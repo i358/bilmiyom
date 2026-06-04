@@ -2,6 +2,7 @@ package com.mceconomy.news;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.config.EconomyConfig;
+import com.mceconomy.economy.FiatMonetarySystem;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.market.MarketPriceEngine;
 import com.mceconomy.persistence.repo.EconomyBulletinRepository;
@@ -74,6 +75,10 @@ public final class EconomyBulletinService {
 		publish(server, Category.STORAGE, headline, detail, 0, false);
 	}
 
+	public void publishMacro(MinecraftServer server, String headline, String detail) {
+		publish(server, Category.MACRO, headline, detail, 0, false);
+	}
+
 	public void publishRobbery(MinecraftServer server, CentralBank centralBank, MarketPriceEngine priceEngine,
 			String headline, String detail, long stolenValueMg) {
 		if (!applyRobberyShock(centralBank, priceEngine, stolenValueMg, "robbery")) {
@@ -122,6 +127,7 @@ public final class EconomyBulletinService {
 		double extraRate = EconomyConfig.launderRateBump();
 		centralBank.setInflationRate(Math.min(0.65, centralBank.getInflationRate() + extraInflation));
 		centralBank.setBaseRate(Math.min(0.35, centralBank.getBaseRate() + extraRate));
+		FiatMonetarySystem.applyMacroShock(centralBank, EconomyConfig.robberyFiatShockPenalty() * 0.6);
 		double goldBump = 1.0 + Math.min(0.25, extraInflation * 1.2);
 		double newGoldFactor = Math.max(1.0, centralBank.getGoldFactor() * goldBump);
 		centralBank.setGoldFactor(newGoldFactor);
@@ -151,6 +157,7 @@ public final class EconomyBulletinService {
 		double newGoldFactor = Math.max(1.0, centralBank.getGoldFactor() * goldBump);
 		centralBank.setGoldFactor(newGoldFactor);
 		GoldStandard.setGoldFactor(newGoldFactor);
+		FiatMonetarySystem.applyMacroShock(centralBank, EconomyConfig.robberyFiatShockPenalty());
 
 		if (priceEngine != null) {
 			priceEngine.setGlobalMultiplier(priceEngine.globalMultiplier() * (1.0 + inflationBump * 0.45));

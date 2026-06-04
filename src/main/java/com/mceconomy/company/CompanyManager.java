@@ -133,6 +133,14 @@ public final class CompanyManager {
 		return companiesByName.values();
 	}
 
+	public long totalTreasuryMg() {
+		long total = 0;
+		for (Company company : companiesByName.values()) {
+			total += company.treasury();
+		}
+		return total;
+	}
+
 	public List<Company> listedCompanies() {
 		List<Company> listed = new ArrayList<>();
 		for (Company company : companiesByName.values()) {

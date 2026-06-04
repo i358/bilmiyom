@@ -36,8 +36,8 @@ function fillSelect(id, items, valueKey, labelFn, emptyLabel) {
 }
 
 function formatMg(mg) {
-  const mc = (mg || 0) / 1000;
-  return mc.toLocaleString('tr-TR', { maximumFractionDigits: 2 }) + ' MC';
+  const usd = (mg || 0) / 1000;
+  return '$' + usd.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
 }
 
 async function logout() {

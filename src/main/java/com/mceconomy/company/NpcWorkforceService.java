@@ -5,6 +5,7 @@ import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
+import com.mceconomy.tax.TaxService;
 import com.mceconomy.job.JobCategory;
 import com.mceconomy.job.JobType;
 import com.mceconomy.market.Commodity;
@@ -34,6 +35,7 @@ public final class NpcWorkforceService {
 	private final CurrencyService currencyService;
 	private CompanyProductPipeline productPipeline;
 	private PlayerEmploymentService playerEmploymentService;
+	private TaxService taxService;
 
 	public NpcWorkforceService(WorkforceRepository repository, CompanyManager companyManager,
 			CurrencyService currencyService) {
@@ -48,6 +50,10 @@ public final class NpcWorkforceService {
 
 	public void bindPlayerEmployment(PlayerEmploymentService playerEmploymentService) {
 		this.playerEmploymentService = playerEmploymentService;
+	}
+
+	public void bindTaxService(TaxService taxService) {
+		this.taxService = taxService;
 	}
 
 	public int employeeCountForCompany(int companyId) {
@@ -309,6 +315,12 @@ public final class NpcWorkforceService {
 			}
 
 			if (paid) {
+				if (taxService != null) {
+					long payrollTax = taxService.calculateIncomeTax(salary);
+					if (payrollTax > 0) {
+						taxService.collectTax(payrollTax);
+					}
+				}
 				employee.setLastPaidAt(System.currentTimeMillis());
 				deliverWorkProducts(server, employee, company, role);
 				try {

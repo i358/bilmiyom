@@ -46,10 +46,32 @@ function formatChangeBps(bps) {
   return bps >= 0 ? `<span class="chg-up">+${pct}%</span>` : `<span class="chg-down">${pct}%</span>`;
 }
 
-function renderLineChart(canvasId, name, labels, values, label, color) {
+function changeBpsFromHistory(history, currentPriceMg = 0) {
+  if (!history?.length) return 0;
+  const oldest = history[0].priceMg;
+  const latest = currentPriceMg > 0 ? currentPriceMg : history[history.length - 1].priceMg;
+  if (!oldest || !latest) return 0;
+  return Math.round((latest - oldest) * 10000 / oldest);
+}
+
+function formatSupplyDemand(row) {
+  if (row?.supplySharePct == null) return '';
+  return `Arz %${row.supplySharePct} · Talep %${row.demandSharePct}`;
+}
+
+function setChartHeading(canvasId, title, bps, extra = '') {
+  const h3 = document.getElementById(canvasId)?.closest('.chart-box')?.querySelector('h3');
+  if (!h3) return;
+  const parts = [title, formatChangeBps(bps)];
+  if (extra) parts.push(`<span class="hint">${extra}</span>`);
+  h3.innerHTML = parts.join(' ');
+}
+
+function renderLineChart(canvasId, name, labels, values, label, color, changeBps = null, subtitle = '') {
   destroyChart(name);
   const el = document.getElementById(canvasId);
   if (!el) return;
+  if (changeBps != null) setChartHeading(canvasId, label, changeBps, subtitle);
   charts[name] = new Chart(el, {
     type: 'line',
     data: { labels, datasets: [{ label, data: values, borderColor: color, backgroundColor: color + '22', tension: 0.3, fill: true }] },
@@ -69,6 +91,7 @@ function renderStats() {
     <div class="stat-card"><div class="label">Meslek</div><div class="value">${me.job}</div></div>
     <div class="stat-card"><div class="label">MASAK</div><div class="value">${masakBadge}</div></div>
     <div class="stat-card gold"><div class="label">Ekonomi Endeksi</div><div class="value">${(overview?.economyIndex || me.economyIndex || 0).toFixed(2)}</div></div>
+    ${me.fiatStrength != null ? `<div class="stat-card accent"><div class="label">Fiat Gücü ($)</div><div class="value">${me.fiatStrength.toFixed(2)}</div><div class="hint">Altın %${me.goldBackingPct ?? '—'} · Devlet %${me.stateCredibilityPct ?? '—'} · Yatırım %${me.investmentPct ?? '—'}</div></div>` : ''}
     <div class="stat-card accent"><div class="label">Altın Külçe Değeri</div><div class="value">${me.ingotPrice || '—'}</div></div>
     <div class="stat-card"><div class="label">Enflasyon</div><div class="value">${((me.inflationRate || 0) * 100).toFixed(2)}%</div></div>
     <div class="stat-card gold"><div class="label">MB Altın Rezervi</div><div class="value">${me.reserveGoldBlocks != null ? me.reserveGoldBlocks + ' blok' : '—'}</div></div>
@@ -171,12 +194,18 @@ function renderCert() {
   }
 }
 
+function marketCommodityLabel(c) {
+  const chg = c.changeBps != null ? ` · ${c.changeBps >= 0 ? '+' : ''}${(c.changeBps / 100).toFixed(1)}%` : '';
+  const sd = c.supplySharePct != null ? ` · A%${c.supplySharePct} T%${c.demandSharePct}` : '';
+  return `${c.name} ${formatMg(c.priceMg)}${chg}${sd}`;
+}
+
 function populateSelects() {
-  const commodities = catalog?.commodities || me.market || [];
+  const commodities = catalog?.commodities || overview?.commodities || me.market || [];
   const buyable = commodities.filter(c => c.buyable !== false);
   const sellable = commodities.filter(c => c.sellable !== false);
-  fillSelect('marketBuySelect', buyable, 'id', c => `${c.name} (${formatMg(c.priceMg)})`);
-  fillSelect('marketSellSelect', sellable, 'id', c => c.name);
+  fillSelect('marketBuySelect', buyable, 'id', marketCommodityLabel);
+  fillSelect('marketSellSelect', sellable, 'id', marketCommodityLabel);
   fillSelect('chartSymbol', sellable.length ? sellable : commodities, 'id', c => c.name);
   fillSelect('jobSelect', catalog?.jobs || [], 'id', j => j.name);
   const ownedTokens = me.tokens || [];
@@ -391,13 +420,15 @@ function renderBarChart(canvasId, name, labels, values, label, color) {
 function renderShareBar(companies) {
   const list = companies.slice(0, 10);
   renderBarChart('shareBarChart', 'shareBar', list.map(c => c.ticker || c.name),
-    list.map(c => (c.sharePriceMg || 0) / 1000), 'Hisse (MC)', '#4da6ff66');
+    list.map(c => (c.sharePriceMg || 0) / 1000), 'Hisse ($)', '#4da6ff66');
 }
 
 function renderTokenBar(tokens) {
   const list = tokens.slice(0, 10);
-  renderBarChart('tokenBarChart', 'tokenBar', list.map(t => t.symbol),
-    list.map(t => (t.priceMg || 0) / 1000), 'Fiyat (MC)', '#e6b42266');
+  renderBarChart('tokenBarChart', 'tokenBar', list.map(t => {
+    const bps = t.changeBps ?? 0;
+    return `${t.symbol} (${bps >= 0 ? '+' : ''}${(bps / 100).toFixed(1)}%)`;
+  }), list.map(t => (t.priceMg || 0) / 1000), 'Fiyat ($)', '#e6b42266');
 }
 
 function renderAssetBar() {
@@ -429,7 +460,15 @@ function renderMarketBar(commodities) {
   if (!el) return;
   charts.marketBar = new Chart(el, {
     type: 'bar',
-    data: { labels: top.map(c => c.name), datasets: [{ label: 'Fiyat (MC)', data: top.map(c => c.priceMg / 1000), backgroundColor: '#d4a84366' }] },
+    data: {
+      labels: top.map(c => {
+        const bps = c.changeBps ?? 0;
+        const pct = (bps / 100).toFixed(1);
+        const sign = bps >= 0 ? '+' : '';
+        return `${c.name} (${sign}${pct}%)`;
+      }),
+      datasets: [{ label: 'Fiyat ($)', data: top.map(c => c.priceMg / 1000), backgroundColor: '#d4a84366' }]
+    },
     options: chartOptions()
   });
 }
@@ -516,7 +555,7 @@ async function loadEmployees() {
         <div><strong>${e.name}</strong> <span class="badge badge-muted">${e.role}</span></div>
         <div class="hint">Maaş: ${e.salary} · Üretim: ${e.produced}</div>
         <div class="form-row">
-          <input type="number" min="1" placeholder="Yeni maaş (MC)" data-raise-input="${e.id}" style="max-width:140px">
+          <input type="number" min="1" placeholder="Yeni maaş ($)" data-raise-input="${e.id}" style="max-width:140px">
           <button class="btn btn-accent btn-sm" data-raise="${e.id}">Zam</button>
           <button class="btn btn-danger btn-sm" data-fire="${e.id}">Kov</button>
         </div>
@@ -627,24 +666,40 @@ function renderDocs() {
 function renderMacroCharts() {
   if (!overview) return;
   const inf = historyToChart(overview.inflationHistory || [], 10000);
-  renderLineChart('inflationChart', 'inflation', inf.labels, inf.values, 'Enflasyon %', '#ff6b6b');
+  renderLineChart('inflationChart', 'inflation', inf.labels, inf.values, 'Enflasyon %', '#ff6b6b',
+    changeBpsFromHistory(overview.inflationHistory || []));
   const gold = historyToChart(overview.goldReserveHistory || [], 1000);
-  renderLineChart('goldReserveChart', 'goldReserve', gold.labels, gold.values, 'Altın Rezervi', '#ffd700');
+  renderLineChart('goldReserveChart', 'goldReserve', gold.labels, gold.values, 'Altın Rezervi', '#ffd700',
+    changeBpsFromHistory(overview.goldReserveHistory || []));
   const mun = historyToChart(overview.municipalHistory || [], 1000);
-  renderLineChart('municipalChart', 'municipal', mun.labels, mun.values, 'Belediye (MC)', '#7bed9f');
+  const munLive = overview.municipalBudgetMg || 0;
+  renderLineChart('municipalChart', 'municipal', mun.labels, mun.values, 'Belediye ($)', '#7bed9f',
+    changeBpsFromHistory(overview.municipalHistory || [], munLive));
+  if (document.getElementById('fiatStrengthChart')) {
+    const fiat = historyToChart(overview.fiatStrengthHistory || [], 10000);
+    const live = (overview?.fiatStrength || me?.fiatStrength || 1) * 10000;
+    renderLineChart('fiatStrengthChart', 'fiatStrength', fiat.labels, fiat.values, 'Fiat Gücü', '#a78bfa',
+      changeBpsFromHistory(overview.fiatStrengthHistory || [], live));
+  }
 }
 
 function renderIndexChart(history) {
   const chart = historyToChart(history, 1000);
-  renderLineChart('indexChart', 'index', chart.labels, chart.values, 'Endeks', '#4da6ff');
+  const live = (overview?.economyIndex || me.economyIndex || 0) * 1000;
+  const bps = overview?.economyIndexChangeBps ?? changeBpsFromHistory(history, live);
+  renderLineChart('indexChart', 'index', chart.labels, chart.values, 'Endeks', '#4da6ff', bps);
 }
 
 async function loadPriceChart(symbol) {
   const data = await api('/prices?symbol=' + encodeURIComponent(symbol) + '&type=COMMODITY');
-  const commodities = catalog?.commodities || me.market || [];
+  const commodities = catalog?.commodities || overview?.commodities || me.market || [];
   const row = commodities.find(c => c.id === symbol);
-  const chart = historyToChart(data.history, 1000, row?.priceMg || 0);
-  renderLineChart('priceChart', 'price', chart.labels, chart.values, symbol, '#d4a843');
+  const live = data.priceMg || row?.priceMg || 0;
+  const chart = historyToChart(data.history, 1000, live);
+  const bps = data.changeBps ?? row?.changeBps ?? changeBpsFromHistory(data.history, live);
+  const sub = formatSupplyDemand(data.supplySharePct != null ? data : row);
+  const label = row?.name || symbol;
+  renderLineChart('priceChart', 'price', chart.labels, chart.values, label, '#d4a843', bps, sub);
 }
 
 async function loadTokenChart(symbol) {
@@ -652,23 +707,28 @@ async function loadTokenChart(symbol) {
   const token = tokens.find(t => t.symbol === symbol);
   let hist = token?.history;
   let livePrice = token?.priceMg || 0;
+  let bps = token?.changeBps;
   if (!hist) {
     const data = await api('/prices?symbol=' + encodeURIComponent(symbol) + '&type=TOKEN');
     hist = data.history;
+    livePrice = data.priceMg || livePrice;
+    bps = data.changeBps;
   }
   const owned = (me.tokens || []).find(t => t.symbol === symbol);
   if (owned) livePrice = owned.priceMg;
   const chart = historyToChart(hist, 1000, livePrice);
-  renderLineChart('tokenChart', 'token', chart.labels, chart.values, symbol, '#e6b422');
+  renderLineChart('tokenChart', 'token', chart.labels, chart.values, symbol, '#e6b422',
+    bps ?? changeBpsFromHistory(hist, livePrice));
 }
 
 async function loadShareChart(symbol) {
   const data = await api('/prices?symbol=' + encodeURIComponent(symbol) + '&type=SHARE');
   const companies = catalog?.companies || [];
   const row = companies.find(c => c.ticker === symbol) || (me.shares || []).find(s => s.ticker === symbol);
-  const livePrice = row?.sharePriceMg || row?.priceMg || 0;
+  const livePrice = data.priceMg || row?.sharePriceMg || row?.priceMg || 0;
   const chart = historyToChart(data.history, 1000, livePrice);
-  renderLineChart('shareChart', 'share', chart.labels, chart.values, symbol, '#4da6ff');
+  renderLineChart('shareChart', 'share', chart.labels, chart.values, symbol, '#4da6ff',
+    data.changeBps ?? changeBpsFromHistory(data.history, livePrice));
 }
 
 async function loadEmployment() {
@@ -1239,6 +1299,62 @@ document.getElementById('slotBtn').onclick = () => doAction('/actions/casino/pla
   game: 'slot', mc: +document.getElementById('slotBet').value, choice: ''
 }, casinoResult);
 
+async function loadMacroPanel() {
+  const me = await api('/api/me');
+  const el = document.getElementById('macroPanel');
+  if (!el || !me) return;
+  el.innerHTML = `<p>Altın faktörü: <strong>${me.goldFactor}</strong></p>
+    <p>Enflasyon: <strong>${(me.inflationRate * 100).toFixed(2)}%</strong></p>
+    <p>Belediye bütçesi: <strong>${me.municipalBudget || '—'}</strong></p>
+    <p class="hint">Detay: oyunda <code>/para durum</code></p>`;
+}
+async function loadInsurancePanel() {
+  const d = await api('/api/insurance');
+  const el = document.getElementById('insurancePanel');
+  if (!el) return;
+  const rows = (d?.policies || []).map(p =>
+    `<div class="list-row">${p.type} — ${p.premium} ${p.active ? '✓' : '✗'}</div>`).join('');
+  el.innerHTML = rows || '<p class="hint">Aktif poliçe yok. Oyunda /sigorta</p>';
+}
+async function loadTradePanel() {
+  const d = await api('/api/trades');
+  const el = document.getElementById('tradePanel');
+  if (!el) return;
+  el.innerHTML = (d?.trades || []).map(t =>
+    `<div class="list-row">#${t.id} ${t.initiator} ↔ ${t.partner} — ${t.status}</div>`).join('') || '<p class="hint">Takas yok</p>';
+}
+async function loadGuildPanel() {
+  const d = await api('/api/guild');
+  const el = document.getElementById('guildPanel');
+  if (!el) return;
+  el.innerHTML = d?.name ? `<p><strong>${d.name}</strong> — Kasa: ${d.treasury}</p>` : '<p class="hint">Lonca yok. /lonca kur</p>';
+}
+async function loadMunicipalPanel() {
+  const d = await api('/api/municipal');
+  const el = document.getElementById('municipalPanel');
+  if (!el) return;
+  const cands = (d?.candidates || []).map(c => `<li>${c.name}</li>`).join('');
+  el.innerHTML = `<p>Başkan: <strong>${d.mayorName}</strong></p><p>Bütçe: ${d.budget}</p><ul>${cands}</ul>`;
+}
+function loadPropertyPanel() {
+  const el = document.getElementById('propertyPanel');
+  if (el) el.innerHTML = '<p class="hint">Satın alma ve TP yalnızca oyunda (/ev).</p>';
+}
+function loadVehiclePanel() {
+  const el = document.getElementById('vehiclePanel');
+  if (el) el.innerHTML = '<p class="hint">Araç spawn ve sürüş client mod ile.</p>';
+}
+async function loadGovernmentPanel() {
+  const me = await api('/api/me');
+  const el = document.getElementById('governmentPanel');
+  if (!el) return;
+  if (me?.isEconomyMinister) {
+    el.innerHTML = '<p class="pnl-up">Ekonomi Bakanı yetkisindesiniz. Emirler: /ekonomi bakan …</p>';
+  } else {
+    el.innerHTML = '<p class="hint">Başvuru: <code>/ekonomi bakan basvur &lt;sebep&gt;</code></p>';
+  }
+}
+
 document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {
   btn.addEventListener('click', () => {
     const page = btn.dataset.page;
@@ -1250,6 +1366,14 @@ document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {
     else if (page === 'exchange') { renderLeveragePositions(); }
     else if (page === 'map') { loadWorldMap(); startMapLiveRefresh(); }
     else if (page === 'bulletins') loadBulletinArchive();
+    else if (page === 'macro') loadMacroPanel();
+    else if (page === 'insurance') loadInsurancePanel();
+    else if (page === 'trade') loadTradePanel();
+    else if (page === 'guild') loadGuildPanel();
+    else if (page === 'municipal') loadMunicipalPanel();
+    else if (page === 'property') loadPropertyPanel();
+    else if (page === 'vehicle') loadVehiclePanel();
+    else if (page === 'government') loadGovernmentPanel();
     else { stopChartLiveRefresh(); stopMapLiveRefresh(); }
   });
 });

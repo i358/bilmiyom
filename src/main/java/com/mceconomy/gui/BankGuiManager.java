@@ -59,8 +59,8 @@ public final class BankGuiManager {
 				"Ürün sat → cüzdan → banka → külçe çek"));
 
 		container.setItem(SLOT_CREATE, GuiItems.button(Items.PAPER, "Hesap Aç", "Ücretsiz vadesiz hesap"));
-		String ingotMcLine = "1 kulce = " + String.format("%,.0f", GoldStandard.ingotPriceMc()) + " MC";
-		String gramMcLine = "1 gram = " + String.format("%,.0f", GoldStandard.gramPriceMc()) + " MC";
+		String ingotMcLine = "1 kulce = " + GoldStandard.CURRENCY_NAME + String.format("%,.0f", GoldStandard.ingotPriceMc());
+		String gramMcLine = "1 gram = " + GoldStandard.CURRENCY_NAME + String.format("%,.0f", GoldStandard.gramPriceMc());
 		container.setItem(SLOT_DEPOSIT, GuiItems.button(Items.GOLD_INGOT, "Külçe Yatır",
 				"Envanterdeki altını bankaya", ingotMcLine));
 		container.setItem(SLOT_WITHDRAW, GuiItems.button(Items.GOLD_BLOCK, "Altın Çek",
@@ -72,9 +72,9 @@ public final class BankGuiManager {
 		container.setItem(SLOT_BUY, GuiItems.button(Items.IRON_INGOT, "Mal Al",
 				"Altın harcayarak mal al", "Altın külçesi satılmaz/alınmaz"));
 		container.setItem(SLOT_WALLET_TO_BANK, GuiItems.button(Items.CHEST,
-				"Cüzdan → Banka", "1K / 10K / 100K / 1M MC", "Tutar seçerek aktar"));
+				"Cüzdan → Banka", "1K / 10K / 100K / 1M $", "Tutar seçerek aktar"));
 		container.setItem(SLOT_BANK_TO_WALLET, GuiItems.button(Items.GOLD_NUGGET,
-				"Banka → Cüzdan", "1K / 10K / 100K / 1M MC", "Tutar seçerek çek"));
+				"Banka → Cüzdan", "1K / 10K / 100K / 1M $", "Tutar seçerek çek"));
 		container.setItem(SLOT_ILLEGAL, GuiItems.button(Items.SKELETON_SKULL,
 				"Yeraltı", "Karaborsa + aklama", "§cRiskli işlemler"));
 		container.setItem(SLOT_EXCHANGE, GuiItems.button(Items.EMERALD_BLOCK,
@@ -398,7 +398,7 @@ public final class BankGuiManager {
 			double displayMc = WALLET_TRANSFER_MC[i];
 			long mg = GoldStandard.milligramsForDisplayMc(displayMc);
 			container.setItem(10 + i, GuiItems.button(Items.GOLD_NUGGET,
-					String.format("%,.0f MC", displayMc),
+					GoldStandard.CURRENCY_NAME + String.format("%,.0f", displayMc),
 					GoldStandard.formatMilligrams(mg),
 					toBank ? "Cüzdandan bankaya" : "Bankadan cüzdana"));
 		}

@@ -5,6 +5,7 @@ import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
+import com.mceconomy.tax.TaxService;
 import com.mceconomy.job.JobType;
 import com.mceconomy.persistence.repo.PlayerEmploymentRepository;
 import com.mceconomy.persistence.repo.SalaryPaymentRepository;
@@ -34,16 +35,18 @@ public final class PlayerEmploymentService {
 	private final CompanyManager companyManager;
 	private final CurrencyService currencyService;
 	private final NpcWorkforceService npcWorkforceService;
+	private final TaxService taxService;
 
 	public PlayerEmploymentService(PlayerEmploymentRepository repository, SalaryPaymentRepository salaryPaymentRepository,
 			Map<UUID, PlayerEconomyProfile> profiles, CompanyManager companyManager,
-			CurrencyService currencyService, NpcWorkforceService npcWorkforceService) {
+			CurrencyService currencyService, NpcWorkforceService npcWorkforceService, TaxService taxService) {
 		this.repository = repository;
 		this.salaryPaymentRepository = salaryPaymentRepository;
 		this.profiles = profiles;
 		this.companyManager = companyManager;
 		this.currencyService = currencyService;
 		this.npcWorkforceService = npcWorkforceService;
+		this.taxService = taxService;
 	}
 
 	public void load() throws SQLException {
@@ -437,15 +440,25 @@ public final class PlayerEmploymentService {
 		return (long) (employment.salaryMg() * EconomyConfig.companyJobBonusRate());
 	}
 
-	private boolean paySalary(Company company, UUID playerUuid, long salary) {
-		if (company.treasury() >= salary) {
-			company.withdraw(salary);
-			return currencyService.deposit(playerUuid, salary, TransactionType.COMPANY);
+	private boolean paySalary(Company company, UUID playerUuid, long gross) {
+		long tax = taxService.calculateIncomeTax(gross);
+		long net = gross - tax;
+		if (net <= 0) {
+			return false;
 		}
-		if (currencyService.withdraw(company.ownerUuid(), salary, TransactionType.COMPANY)) {
-			return currencyService.deposit(playerUuid, salary, TransactionType.COMPANY);
+		boolean paid;
+		if (company.treasury() >= gross) {
+			company.withdraw(gross);
+			paid = currencyService.deposit(playerUuid, net, TransactionType.COMPANY);
+		} else if (currencyService.withdraw(company.ownerUuid(), gross, TransactionType.COMPANY)) {
+			paid = currencyService.deposit(playerUuid, net, TransactionType.COMPANY);
+		} else {
+			return false;
 		}
-		return false;
+		if (paid && tax > 0) {
+			taxService.collectTax(tax);
+		}
+		return paid;
 	}
 
 	public int employeeCountForCompany(int companyId) {

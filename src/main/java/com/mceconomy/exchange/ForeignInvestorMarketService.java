@@ -364,6 +364,18 @@ public final class ForeignInvestorMarketService {
 		return manager.server() != null ? manager.server().overworld() : null;
 	}
 
+	public long totalInvestorCapitalMg() {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager == null || investors.isEmpty()) {
+			return 0;
+		}
+		long total = 0;
+		for (Investor investor : investors) {
+			total += manager.currencyService().getBalance(investor.uuid());
+		}
+		return total;
+	}
+
 	private void broadcastTrade(String message) {
 		actionCounter++;
 		if (actionCounter % 2 != 0) {

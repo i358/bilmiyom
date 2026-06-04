@@ -72,6 +72,10 @@ public final class MarketService {
 		return priceEngine;
 	}
 
+	public CommodityState commodityState(Commodity commodity) {
+		return states.get(commodity);
+	}
+
 	public EconomyIndex economyIndex() {
 		return economyIndex;
 	}

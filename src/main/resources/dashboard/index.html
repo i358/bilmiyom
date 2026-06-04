@@ -30,6 +30,7 @@
       <div class="nav-group">
         <div class="nav-group-title">Genel</div>
         <button class="nav-item active" data-page="overview"><span class="icon">📊</span> Genel Bakış</button>
+        <button class="nav-item" data-page="macro"><span class="icon">📉</span> Makro & Fiat</button>
         <button class="nav-item" data-page="map"><span class="icon">🗺</span> Canlı Harita</button>
         <button class="nav-item" data-page="bulletins"><span class="icon">📰</span> Bülten Arşivi</button>
         <button class="nav-item" data-page="charts"><span class="icon">📈</span> Grafikler</button>
@@ -42,6 +43,12 @@
         <button class="nav-item" data-page="bank"><span class="icon">🏦</span> Banka</button>
         <button class="nav-item" data-page="market"><span class="icon">🌾</span> Market</button>
         <button class="nav-item" data-page="loan"><span class="icon">📋</span> Kredi</button>
+        <button class="nav-item" data-page="insurance"><span class="icon">🛡</span> Sigorta</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Sosyal</div>
+        <button class="nav-item" data-page="trade"><span class="icon">🤝</span> Takas</button>
+        <button class="nav-item" data-page="guild"><span class="icon">⚔</span> Lonca</button>
       </div>
       <div class="nav-group">
         <div class="nav-group-title">Yatırım</div>
@@ -49,6 +56,13 @@
         <button class="nav-item" data-page="company"><span class="icon">🏢</span> Şirket & Hisse</button>
         <button class="nav-item" data-page="employees"><span class="icon">👔</span> Çalışanlar</button>
         <button class="nav-item" data-page="privatebank"><span class="icon">🔐</span> Özel Banka</button>
+        <button class="nav-item" data-page="property"><span class="icon">🏠</span> Gayrimenkul</button>
+        <button class="nav-item" data-page="vehicle"><span class="icon">🚗</span> Araç</button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Devlet</div>
+        <button class="nav-item" data-page="municipal"><span class="icon">🏛</span> Belediye</button>
+        <button class="nav-item" data-page="government"><span class="icon">👔</span> Bakanlık</button>
       </div>
       <div class="nav-group">
         <div class="nav-group-title">Eğlence</div>
@@ -173,6 +187,11 @@
               <canvas id="municipalChart"></canvas>
             </div>
             <div class="panel-card chart-box">
+              <h3>Fiat Para Gücü</h3>
+              <canvas id="fiatStrengthChart"></canvas>
+              <p class="hint">Altın desteği + devlet güveni + yatırım derinliği</p>
+            </div>
+            <div class="panel-card chart-box">
               <h3>Portföy Dağılımı</h3>
               <canvas id="portfolioChart"></canvas>
             </div>
@@ -280,12 +299,12 @@
               <h3>Ödeme Gönder</h3>
               <p class="hint">/ode komutu ile aynı — cüzdandan transfer</p>
               <label>Alıcı</label><input id="payTarget" placeholder="Oyuncu adı">
-              <label>Tutar (MC)</label><input id="payGrams" type="number" min="1" value="1">
+              <label>Tutar ($)</label><input id="payGrams" type="number" min="1" value="1">
               <button class="btn btn-gold btn-block" id="payBtn">Gönder</button>
             </div>
             <div class="panel-card">
               <h3>Cüzdan ↔ Banka</h3>
-              <label>Tutar (MC)</label><input id="walletMoveGrams" type="number" min="1" value="10">
+              <label>Tutar ($)</label><input id="walletMoveGrams" type="number" min="1" value="10">
               <div class="form-row">
                 <button class="btn btn-accent" id="walletToBankBtn">Bankaya Yatır</button>
                 <button class="btn btn-ghost" id="bankToWalletBtn">Bankadan Çek</button>
@@ -306,7 +325,7 @@
               <hr style="border-color:var(--border);margin:16px 0">
               <h3>Banka Transferi</h3>
               <label>Alıcı</label><input id="bankTransferTarget" placeholder="Oyuncu adı">
-              <label>Tutar (MC)</label><input id="bankTransferGrams" type="number" min="1" value="10">
+              <label>Tutar ($)</label><input id="bankTransferGrams" type="number" min="1" value="10">
               <button class="btn btn-gold btn-block" id="bankTransferBtn">Transfer Et</button>
             </div>
             <div class="panel-card">
@@ -323,6 +342,7 @@
 
         <!-- MARKET -->
         <section id="page-market" class="page">
+          <p class="hint" style="margin-bottom:12px">Emtia fiyatları arz/talep akışına göre hareket eder; listede A% = arz payı, T% = talep payı. Altın külçe fiyatı (MC/ingot) ayrı makro değişkendir — markette emtia satmak altını doğrudan düşürmez.</p>
           <div class="grid-2">
             <div class="panel-card">
               <h3>Market Al</h3>
@@ -350,7 +370,7 @@
             </div>
             <div class="panel-card">
               <h3>Kredi Al</h3>
-              <label>Tutar (MC)</label><input id="loanGrams" type="number" min="1" value="100">
+              <label>Tutar ($)</label><input id="loanGrams" type="number" min="1" value="100">
               <button class="btn btn-gold btn-block" id="loanTakeBtn">Kredi Al</button>
             </div>
           </div>
@@ -464,7 +484,7 @@
             <div class="panel-card">
               <h3>Mevduat</h3>
               <label>Banka</label><select id="pbankSelect"></select>
-              <label>Tutar (MC)</label><input id="pbankGrams" type="number" min="1" value="10">
+              <label>Tutar ($)</label><input id="pbankGrams" type="number" min="1" value="10">
               <div class="form-row">
                 <button class="btn btn-gold" id="pbankDepositBtn">Yatır</button>
                 <button class="btn btn-ghost" id="pbankWithdrawBtn">Çek</button>
@@ -558,7 +578,7 @@
             </div>
             <div class="panel-card">
               <h3>Para Aklama</h3>
-              <label>Tutar (MC kara para)</label><input id="launderGrams" type="number" min="1" value="10">
+              <label>Tutar ($ kara para)</label><input id="launderGrams" type="number" min="1" value="10">
               <button class="btn btn-accent btn-block" id="launderBtn">Aklamayı Dene</button>
             </div>
           </div>
@@ -593,6 +613,15 @@
             <div id="myReports"></div>
           </div>
         </section>
+
+        <section id="page-macro" class="page"><div class="panel-card"><h3>Makro & Fiat</h3><div id="macroPanel" class="hint">Yükleniyor…</div></div></section>
+        <section id="page-insurance" class="page"><div class="panel-card"><h3>Sigorta</h3><div id="insurancePanel"></div></div></section>
+        <section id="page-trade" class="page"><div class="panel-card"><h3>Takas Geçmişi</h3><div id="tradePanel"></div></div></section>
+        <section id="page-guild" class="page"><div class="panel-card"><h3>Lonca</h3><div id="guildPanel"></div></div></section>
+        <section id="page-municipal" class="page"><div class="panel-card"><h3>Belediye</h3><div id="municipalPanel"></div></div></section>
+        <section id="page-property" class="page"><div class="panel-card"><h3>Gayrimenkul</h3><p class="hint">Oyunda: /ev al cottage|house|villa</p><div id="propertyPanel"></div></div></section>
+        <section id="page-vehicle" class="page"><div class="panel-card"><h3>Garaj</h3><p class="hint">Client+server mod gerekir. /araba al sedan</p><div id="vehiclePanel"></div></div></section>
+        <section id="page-government" class="page"><div class="panel-card"><h3>Ekonomi Bakanlığı</h3><div id="governmentPanel"></div></div></section>
 
         <!-- APPEALS -->
         <section id="page-appeals" class="page">

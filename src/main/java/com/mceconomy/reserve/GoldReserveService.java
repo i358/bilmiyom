@@ -2,7 +2,6 @@ package com.mceconomy.reserve;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.economy.GoldStandard;
-import com.mceconomy.tax.CentralBank;
 import com.mceconomy.world.CentralBankPlacer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -99,21 +98,9 @@ public final class GoldReserveService {
 		return removed;
 	}
 
-	public void applyReservePressure(CentralBank centralBank, long moneySupplyMg) {
-		double coverage = coverageRatio(moneySupplyMg);
-		double target = com.mceconomy.config.EconomyConfig.targetGoldReserveCoverage();
-		if (coverage < target) {
-			double deficit = (target - coverage) / target;
-			double bump = 1.0 + Math.min(0.08, deficit * 0.15);
-			double newFactor = Math.max(1.0, centralBank.getGoldFactor() * bump);
-			centralBank.setGoldFactor(newFactor);
-			GoldStandard.setGoldFactor(newFactor);
-		} else if (coverage > target * 1.5) {
-			double newFactor = Math.max(1.0, centralBank.getGoldFactor() * 0.998);
-			centralBank.setGoldFactor(newFactor);
-			GoldStandard.setGoldFactor(newFactor);
-		}
+	/** Rezerv sadece fiat altin-destek skoruna girer; goldFactor dogrudan burada degismez. */
+	public void logReserveStatus(long moneySupplyMg) {
 		McEconomyMod.LOGGER.debug("Altin rezervi: {} blok, destek {}%",
-				cachedGoldBlocks, String.format("%.2f", coverage * 100));
+				cachedGoldBlocks, String.format("%.2f", coverageRatio(moneySupplyMg) * 100));
 	}
 }

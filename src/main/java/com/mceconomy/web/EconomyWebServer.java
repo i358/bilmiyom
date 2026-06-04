@@ -19,6 +19,8 @@ import com.mceconomy.exchange.ExchangeToken;
 import com.mceconomy.job.JobType;
 import com.mceconomy.job.QuestManager;
 import com.mceconomy.market.Commodity;
+import com.mceconomy.market.CommodityState;
+import com.mceconomy.market.MarketService;
 import com.mceconomy.player.PlayerEconomyProfile;
 import com.mceconomy.privatebank.PrivateBank;
 import com.mceconomy.regulation.MasakAlert;
@@ -72,6 +74,9 @@ public final class EconomyWebServer {
 			server.createContext("/api/charts/portfolio", this::handleChartsPortfolio);
 			server.createContext("/api/employment", this::handleEmployment);
 			server.createContext("/api/trades", this::handleTrades);
+			server.createContext("/api/insurance", this::handleInsurance);
+			server.createContext("/api/guild", this::handleGuild);
+			server.createContext("/api/municipal", this::handleMunicipal);
 			server.createContext("/api/admin/trades/disputes", this::handleAdminTradeDisputes);
 			server.createContext("/api/actions/", this::handlePlayerAction);
 			server.createContext("/api/admin/overview", this::handleAdminOverview);
@@ -211,9 +216,19 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		JsonObject me = buildPortfolio(session.get().playerUuid());
+		UUID uuid = session.get().playerUuid();
+		JsonObject me = buildPortfolio(uuid);
 		me.addProperty("op", session.get().op());
+		var em = McEconomyMod.getEconomyManager();
+		var minister = em.economyMinisterService();
+		me.addProperty("isEconomyMinister", minister != null && minister.isMinister(uuid));
+		PlayerEconomyProfile prof = em.profiles().get(uuid);
+		me.addProperty("centralBankOfficial", prof != null && prof.centralBankOfficial());
 		sendJson(exchange, 200, me);
+	}
+
+	public void clearSessions() {
+		sessionManager.clearAll();
 	}
 
 	private void handleCatalog(HttpExchange exchange) throws IOException {
@@ -373,6 +388,70 @@ public final class EconomyWebServer {
 		}
 		JsonObject data = new JsonObject();
 		data.add("trades", trades);
+		sendJson(exchange, 200, data);
+	}
+
+	private void handleInsurance(HttpExchange exchange) throws IOException {
+		Optional<WebSession> session = requireSession(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
+			return;
+		}
+		UUID uuid = session.get().playerUuid();
+		var ins = McEconomyMod.getEconomyManager().insuranceService();
+		JsonObject data = new JsonObject();
+		JsonArray policies = new JsonArray();
+		for (var p : ins.policiesFor(uuid)) {
+			JsonObject row = new JsonObject();
+			row.addProperty("type", p.type().name());
+			row.addProperty("companyId", p.companyId());
+			row.addProperty("premiumMg", p.monthlyPremiumMg());
+			row.addProperty("premium", GoldStandard.formatMilligrams(p.monthlyPremiumMg()));
+			row.addProperty("active", p.active());
+			policies.add(row);
+		}
+		data.add("policies", policies);
+		sendJson(exchange, 200, data);
+	}
+
+	private void handleGuild(HttpExchange exchange) throws IOException {
+		Optional<WebSession> session = requireSession(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
+			return;
+		}
+		var guild = McEconomyMod.getEconomyManager().guildService().guildForPlayer(session.get().playerUuid());
+		JsonObject data = new JsonObject();
+		if (guild.isPresent()) {
+			var g = guild.get();
+			data.addProperty("name", g.name());
+			data.addProperty("treasuryMg", g.treasuryMg());
+			data.addProperty("treasury", GoldStandard.formatMilligrams(g.treasuryMg()));
+			data.addProperty("strikeActive", g.strikeActive());
+		}
+		sendJson(exchange, 200, data);
+	}
+
+	private void handleMunicipal(HttpExchange exchange) throws IOException {
+		Optional<WebSession> session = requireSession(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
+			return;
+		}
+		var mayor = McEconomyMod.getEconomyManager().mayorService();
+		JsonObject data = new JsonObject();
+		var mstate = mayor.state();
+		data.addProperty("mayorName", mstate.hasMayor() ? mstate.mayorName() : "—");
+		data.addProperty("budgetMg", McEconomyMod.getEconomyManager().centralBank().getMunicipalBudgetMg());
+		data.addProperty("budget", GoldStandard.formatMilligrams(
+				McEconomyMod.getEconomyManager().centralBank().getMunicipalBudgetMg()));
+		JsonArray candidates = new JsonArray();
+		for (var entry : mayor.electionCandidates().entrySet()) {
+			JsonObject row = new JsonObject();
+			row.addProperty("name", entry.getValue());
+			candidates.add(row);
+		}
+		data.add("candidates", candidates);
 		sendJson(exchange, 200, data);
 	}
 
@@ -625,6 +704,7 @@ public final class EconomyWebServer {
 					body.has("circulating") ? intVal(body, "circulating", 0) : null);
 			case "economy/token/delete" -> AdminEconomyService.tokenDelete(text(body, "symbol"));
 			case "config/save" -> AdminEconomyService.configSave(text(body, "json"));
+			case "economy/full-reset" -> fullEconomyReset();
 			default -> ActionResult.fail("Bilinmeyen admin işlemi: " + action);
 		};
 	}
@@ -799,6 +879,7 @@ public final class EconomyWebServer {
 			macro.addProperty("moneySupply", cb.getMoneySupply());
 			macro.addProperty("municipalBudgetMg", cb.getMunicipalBudgetMg());
 			macro.addProperty("municipalBudgetMc", cb.getMunicipalBudgetMg() / 1000.0);
+			addFiatMacro(macro, cb);
 			data.add("centralBank", macro);
 		}
 		sendJson(exchange, 200, data);
@@ -842,9 +923,11 @@ public final class EconomyWebServer {
 			JsonObject row = new JsonObject();
 			row.addProperty("id", commodity.id());
 			row.addProperty("name", commodity.displayName());
-			row.addProperty("priceMg", manager.marketService().priceEngine().getUnitPrice(commodity));
+			long priceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
+			row.addProperty("priceMg", priceMg);
 			row.addProperty("buyable", commodity.buyable());
 			row.addProperty("sellable", commodity.sellable());
+			enrichCommodityRow(row, manager.marketService(), commodity, priceMg);
 			commodities.add(row);
 		}
 		catalog.add("commodities", commodities);
@@ -925,6 +1008,21 @@ public final class EconomyWebServer {
 		return catalog;
 	}
 
+	private ActionResult fullEconomyReset() {
+		return runOnServer(() -> {
+			try {
+				var report = com.mceconomy.world.ModWorldResetService.fullEconomyReset(
+						McEconomyMod.getEconomyManager().server(), null);
+				sessionManager.clearAll();
+				return ActionResult.ok("Tam sifirlama: DB="
+						+ (report.databaseWiped() ? "OK" : "HATA")
+						+ ", MB yenilendi. Tum web oturumlari kapatildi.");
+			} catch (Exception e) {
+				return ActionResult.fail(e.getMessage());
+			}
+		});
+	}
+
 	private ActionResult runOnServer(Supplier<ActionResult> action) {
 		MinecraftServer mcServer = McEconomyMod.getEconomyManager().server();
 		if (mcServer == null) {
@@ -969,10 +1067,39 @@ public final class EconomyWebServer {
 				}
 			}
 		}
+		var manager = McEconomyMod.getEconomyManager();
+		JsonArray history = loadHistory(type, symbol, 48);
 		JsonObject response = new JsonObject();
 		response.addProperty("symbol", symbol);
 		response.addProperty("type", type);
-		response.add("history", loadHistory(type, symbol, 48));
+		response.add("history", history);
+		long currentPriceMg = 0;
+		if ("COMMODITY".equals(type)) {
+			Commodity commodity = Commodity.fromId(symbol);
+			if (commodity != null) {
+				currentPriceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
+				enrichCommodityRow(response, manager.marketService(), commodity, currentPriceMg);
+			}
+		} else if ("TOKEN".equals(type)) {
+			for (ExchangeToken token : manager.exchangeService().allTokens()) {
+				if (token.symbol().equalsIgnoreCase(symbol)) {
+					currentPriceMg = token.priceMg();
+					break;
+				}
+			}
+		} else if ("SHARE".equals(type)) {
+			double index = manager.marketService().economyIndex().calculate();
+			for (Company company : manager.companyManager().allCompanies()) {
+				if (company.ticker() != null && company.ticker().equalsIgnoreCase(symbol)) {
+					currentPriceMg = company.sharePrice(index);
+					break;
+				}
+			}
+		}
+		if (currentPriceMg > 0) {
+			response.addProperty("priceMg", currentPriceMg);
+			response.addProperty("changeBps", priceChangeBps(history, currentPriceMg));
+		}
 		sendJson(exchange, 200, response);
 	}
 
@@ -1143,9 +1270,14 @@ public final class EconomyWebServer {
 			return;
 		}
 		var manager = McEconomyMod.getEconomyManager();
+		var market = manager.marketService();
 		JsonObject data = new JsonObject();
-		data.addProperty("economyIndex", manager.marketService().economyIndex().calculate());
-		data.add("indexHistory", loadHistory("INDEX", "economy", 48));
+		double economyIndex = market.economyIndex().calculate();
+		long indexScaledMg = (long) (economyIndex * 1000);
+		JsonArray indexHistory = loadHistory("INDEX", "economy", 48);
+		data.addProperty("economyIndex", economyIndex);
+		data.addProperty("economyIndexChangeBps", priceChangeBps(indexHistory, indexScaledMg));
+		data.add("indexHistory", indexHistory);
 
 		JsonArray commodities = new JsonArray();
 		for (Commodity commodity : Commodity.values()) {
@@ -1155,8 +1287,10 @@ public final class EconomyWebServer {
 			JsonObject row = new JsonObject();
 			row.addProperty("id", commodity.id());
 			row.addProperty("name", commodity.displayName());
-			row.addProperty("priceMg", manager.marketService().priceEngine().getUnitPrice(commodity));
+			long priceMg = market.priceEngine().getUnitPrice(commodity);
+			row.addProperty("priceMg", priceMg);
 			row.addProperty("category", commodity.jobCategory().name());
+			enrichCommodityRow(row, market, commodity, priceMg);
 			commodities.add(row);
 		}
 		data.add("commodities", commodities);
@@ -1166,8 +1300,11 @@ public final class EconomyWebServer {
 			JsonObject row = new JsonObject();
 			row.addProperty("symbol", token.symbol());
 			row.addProperty("name", token.displayName());
-			row.addProperty("priceMg", token.priceMg());
-			row.add("history", loadHistory("TOKEN", token.symbol(), 24));
+			long priceMg = token.priceMg();
+			row.addProperty("priceMg", priceMg);
+			JsonArray tokenHist = loadHistory("TOKEN", token.symbol(), 24);
+			row.add("history", tokenHist);
+			row.addProperty("changeBps", priceChangeBps(tokenHist, priceMg));
 			tokens.add(row);
 		}
 		data.add("tokens", tokens);
@@ -1191,6 +1328,10 @@ public final class EconomyWebServer {
 		data.add("inflationHistory", loadHistory("MACRO", "inflation", 48));
 		data.add("goldReserveHistory", loadHistory("MACRO", "gold_reserve", 48));
 		data.add("municipalHistory", loadHistory("MACRO", "municipal_budget", 48));
+		data.add("fiatStrengthHistory", loadHistory("MACRO", "fiat_strength", 48));
+		if (manager.centralBank() != null) {
+			addFiatMacro(data, manager.centralBank());
+		}
 		sendJson(exchange, 200, data);
 	}
 
@@ -1270,6 +1411,33 @@ public final class EconomyWebServer {
 		row.add("history", history);
 		row.addProperty("changeBps", priceChangeBps(history, pos.currentPriceMg()));
 		return row;
+	}
+
+	private static void addFiatMacro(JsonObject data, com.mceconomy.tax.CentralBank cb) {
+		data.addProperty("fiatStrength", cb.getFiatStrength());
+		data.addProperty("goldBackingPct", Math.round(cb.getGoldBackingScore() * 1000) / 10.0);
+		data.addProperty("stateCredibilityPct", Math.round(cb.getStateCredibilityScore() * 1000) / 10.0);
+		data.addProperty("investmentPct", Math.round(cb.getInvestmentScore() * 1000) / 10.0);
+		data.addProperty("fiatShockPenalty", cb.getFiatShockPenalty());
+	}
+
+	private void enrichCommodityRow(JsonObject row, MarketService market, Commodity commodity, long priceMg) {
+		CommodityState state = market.commodityState(commodity);
+		if (state == null) {
+			return;
+		}
+		row.addProperty("supplyIndex", state.supplyIndex());
+		row.addProperty("demandIndex", state.demandIndex());
+		double flow = state.supplyIndex() + state.demandIndex();
+		if (flow > 0) {
+			row.addProperty("supplySharePct", Math.round(state.supplyIndex() / flow * 1000) / 10.0);
+			row.addProperty("demandSharePct", Math.round(state.demandIndex() / flow * 1000) / 10.0);
+		} else {
+			row.addProperty("supplySharePct", 50.0);
+			row.addProperty("demandSharePct", 50.0);
+		}
+		JsonArray hist = loadHistory("COMMODITY", commodity.id(), 24);
+		row.addProperty("changeBps", priceChangeBps(hist, priceMg));
 	}
 
 	/** Gecmis penceresinde en eski fiyat -> guncel fiyat (basis points). */
@@ -1522,8 +1690,10 @@ public final class EconomyWebServer {
 		data.addProperty("ingotPrice", GoldStandard.formatMilligrams(Math.round(GoldStandard.ingotPriceMc() * 1000)));
 		data.addProperty("inflationRate", manager.centralBank() != null ? manager.centralBank().getInflationRate() : 0);
 		if (manager.centralBank() != null) {
-			data.addProperty("municipalBudgetMg", manager.centralBank().getMunicipalBudgetMg());
-			data.addProperty("municipalBudget", GoldStandard.formatMilligrams(manager.centralBank().getMunicipalBudgetMg()));
+			var cb = manager.centralBank();
+			data.addProperty("municipalBudgetMg", cb.getMunicipalBudgetMg());
+			data.addProperty("municipalBudget", GoldStandard.formatMilligrams(cb.getMunicipalBudgetMg()));
+			addFiatMacro(data, cb);
 		}
 		data.addProperty("certCostMg", com.mceconomy.config.EconomyConfig.bankCertificateCostMg());
 		data.addProperty("certCost", GoldStandard.formatMilligrams(com.mceconomy.config.EconomyConfig.bankCertificateCostMg()));
@@ -1662,7 +1832,9 @@ public final class EconomyWebServer {
 			JsonObject row = new JsonObject();
 			row.addProperty("id", commodity.id());
 			row.addProperty("name", commodity.displayName());
-			row.addProperty("priceMg", manager.marketService().priceEngine().getUnitPrice(commodity));
+			long priceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
+			row.addProperty("priceMg", priceMg);
+			enrichCommodityRow(row, manager.marketService(), commodity, priceMg);
 			market.add(row);
 		}
 		data.add("market", market);

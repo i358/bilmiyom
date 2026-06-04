@@ -49,6 +49,11 @@ public final class EconomyDatabaseReset {
 			"market_state",
 			"players",
 			"central_bank",
+			"player_properties",
+			"player_vehicles",
+			"company_buildings",
+			"economy_minister_applications",
+			"economy_decrees",
 	};
 
 	private EconomyDatabaseReset() {

@@ -30,4 +30,8 @@ public final class WebSessionManager {
 	public void revoke(String token) {
 		sessions.remove(token);
 	}
+
+	public void clearAll() {
+		sessions.clear();
+	}
 }

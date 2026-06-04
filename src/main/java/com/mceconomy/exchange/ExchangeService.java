@@ -174,6 +174,15 @@ public final class ExchangeService {
 		return new ArrayList<>(tokensBySymbol.values());
 	}
 
+	/** Dolasimdaki coinlerin toplam piyasa degeri (yatirim derinligi). */
+	public long totalCirculatingMarketCapMg() {
+		long total = 0;
+		for (ExchangeToken token : tokensBySymbol.values()) {
+			total += (long) token.circulating() * token.priceMg();
+		}
+		return total;
+	}
+
 	public List<Company> listedCompanies() {
 		return companyManager.listedCompanies();
 	}

@@ -51,6 +51,8 @@ public final class PriceHistoryService {
 					? manager.goldReserveService().cachedGoldBlocks() : 0;
 			repository.record("MACRO", "gold_reserve", reserveBlocks * 1000L, now);
 			repository.record("MACRO", "municipal_budget", manager.centralBank().getMunicipalBudgetMg(), now);
+			long fiatScaled = (long) (manager.centralBank().getFiatStrength() * 10_000);
+			repository.record("MACRO", "fiat_strength", fiatScaled, now);
 			repository.pruneOlderThan(now - 7L * 24 * 60 * 60 * 1000);
 		} catch (SQLException e) {
 			McEconomyMod.LOGGER.error("Fiyat geçmişi kaydedilemedi", e);

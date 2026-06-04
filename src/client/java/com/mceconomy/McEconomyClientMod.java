@@ -2,7 +2,10 @@ package com.mceconomy;
 
 import com.mceconomy.client.EconomyHudOverlay;
 import com.mceconomy.client.EconomyHudState;
+import com.mceconomy.client.VehicleInputCapture;
 import com.mceconomy.network.EconomyHudPayload;
+import com.mceconomy.network.VehicleInputPayload;
+import com.mceconomy.network.VehicleStatePayload;
 import com.mceconomy.McEconomyMod;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -29,6 +32,13 @@ public class McEconomyClientMod implements ClientModInitializer {
 			EconomyHudOverlay.register();
 		} catch (Throwable t) {
 			McEconomyMod.LOGGER.error("HUD overlay baslatilamadi, oyun yine de calisacak", t);
+		}
+		try {
+			PayloadTypeRegistry.serverboundPlay().register(VehicleInputPayload.TYPE, VehicleInputPayload.STREAM_CODEC);
+			PayloadTypeRegistry.clientboundPlay().register(VehicleStatePayload.TYPE, VehicleStatePayload.STREAM_CODEC);
+			VehicleInputCapture.register();
+		} catch (Throwable t) {
+			McEconomyMod.LOGGER.warn("Arac payload: {}", t.getMessage());
 		}
 	}
 }

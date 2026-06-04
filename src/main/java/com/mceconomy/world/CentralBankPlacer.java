@@ -166,11 +166,18 @@ public final class CentralBankPlacer {
 	}
 
 	public static void setupIfNeeded(MinecraftServer server) {
-		if (!EconomyConfig.spawnBankEnabled() || EconomyConfig.spawnBankBuilt()) {
-			restoreBoundsFromConfig();
+		restoreBoundsFromConfig();
+		if (!EconomyConfig.spawnBankEnabled()) {
 			return;
 		}
-		build(server);
+		ServerLevel level = server.overworld();
+		if (EconomyConfig.spawnBankBuilt() && bankOrigin != null && isCentralBankStructureIntact(level, bankOrigin)) {
+			return;
+		}
+		clearAllKnownSites(level);
+		removeExisting(level);
+		EconomyConfig.setSpawnBankBuilt(false);
+		buildAt(level, computeRemoteFlatOrigin(level));
 	}
 
 	public static void rebuild(MinecraftServer server) {
@@ -183,7 +190,7 @@ public final class CentralBankPlacer {
 		clearAllKnownSites(level);
 		removeExisting(level);
 		EconomyConfig.setSpawnBankBuilt(false);
-		BlockPos origin = anchor != null ? computeOriginNearPlayer(anchor) : computeBuildOrigin(level);
+		BlockPos origin = anchor != null ? computeOriginNearPlayer(anchor) : computeRemoteFlatOrigin(level);
 		buildAt(level, origin);
 	}
 
@@ -308,7 +315,59 @@ public final class CentralBankPlacer {
 
 	private static void build(MinecraftServer server) {
 		ServerLevel level = server.overworld();
-		buildAt(level, computeBuildOrigin(level));
+		buildAt(level, computeRemoteFlatOrigin(level));
+	}
+
+	/** Spawn'dan uzakta (config mesafesi) duz arazi arar. */
+	public static BlockPos computeRemoteFlatOrigin(ServerLevel level) {
+		BlockPos spawn = level.getRespawnData().pos();
+		int dist = EconomyConfig.centralBankSpawnDistanceBlocks();
+		int[][] dirs = { { dist, 0 }, { -dist, 0 }, { 0, dist }, { 0, -dist },
+				{ dist, dist }, { dist, -dist }, { -dist, dist }, { -dist, -dist } };
+		BlockPos best = null;
+		int bestScore = Integer.MIN_VALUE;
+		for (int[] d : dirs) {
+			int cx = spawn.getX() + d[0];
+			int cz = spawn.getZ() + d[1];
+			BlockPos surface = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, new BlockPos(cx, 0, cz));
+			int flatScore = flatnessScore(level, surface.getX(), surface.getZ(), 8);
+			if (flatScore > bestScore) {
+				bestScore = flatScore;
+				best = new BlockPos(surface.getX() - 9, surface.getY() + EconomyConfig.centralBankElevationBlocks(), surface.getZ() - 4);
+			}
+		}
+		if (best != null) {
+			return best;
+		}
+		return computeBuildOrigin(level);
+	}
+
+	private static int flatnessScore(ServerLevel level, int cx, int cz, int radius) {
+		int minY = Integer.MAX_VALUE;
+		int maxY = Integer.MIN_VALUE;
+		for (int x = cx - radius; x <= cx + radius; x++) {
+			for (int z = cz - radius; z <= cz + radius; z++) {
+				int y = level.getHeightmapPos(Heightmap.Types.WORLD_SURFACE, new BlockPos(x, 0, z)).getY();
+				minY = Math.min(minY, y);
+				maxY = Math.max(maxY, y);
+			}
+		}
+		return 100 - (maxY - minY) * 10;
+	}
+
+	/** MB ana yapisi (zemin + giris) yerinde mi? */
+	public static boolean isCentralBankStructureIntact(ServerLevel level, BlockPos origin) {
+		if (origin == null) {
+			return false;
+		}
+		BlockState floor = Blocks.POLISHED_ANDESITE.defaultBlockState();
+		BlockState trim = Blocks.GOLD_BLOCK.defaultBlockState();
+		if (!level.getBlockState(origin.offset(9, 0, 5)).is(Blocks.POLISHED_ANDESITE)
+				&& !level.getBlockState(origin.offset(9, 0, 5)).is(Blocks.GOLD_BLOCK)) {
+			return false;
+		}
+		return level.getBlockState(origin).is(Blocks.STONE_BRICKS)
+				|| level.getBlockState(origin.offset(BANK_WIDTH - 1, 1, 0)).is(Blocks.STONE_BRICKS);
 	}
 
 	private static void buildAt(ServerLevel level, BlockPos origin) {

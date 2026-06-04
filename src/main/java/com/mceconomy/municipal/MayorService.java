@@ -48,6 +48,10 @@ public final class MayorService {
 		return state;
 	}
 
+	public Map<UUID, String> electionCandidates() {
+		return Map.copyOf(candidates);
+	}
+
 	public boolean isMayor(UUID uuid) {
 		return state.hasMayor() && uuid.equals(state.mayorUuid());
 	}

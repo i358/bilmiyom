@@ -190,27 +190,27 @@ function renderPlayerAdminModal() {
         <div class="stat-card warn"><div class="label">Kara</div><div class="value">${formatMg(p.dirtyMg)}</div></div>
       </div>
       <h4>Cüzdan</h4>
-      <div class="admin-form-grid">${mcInput('paWalletSet', 'Mutlak (MC)', p.walletMg)}${mcInput('paWalletAdj', 'Delta (+/- MC)', 0)}</div>
+      <div class="admin-form-grid">${mcInput('paWalletSet', 'Mutlak ($)', p.walletMg)}${mcInput('paWalletAdj', 'Delta (+/- MC)', 0)}</div>
       <div class="inline-actions">
         <button class="btn btn-gold btn-sm" id="paWalletSetBtn">Cüzdan Ayarla</button>
         <button class="btn btn-ghost btn-sm" id="paWalletAdjBtn">Delta Uygula</button>
       </div>
       <h4 style="margin-top:20px">Banka — Vadesiz ${p.hasChecking ? '' : '(hesap yok)'}</h4>
-      <div class="admin-form-grid">${mcInput('paBankChecking', 'Bakiye (MC)', p.bankMg)}</div>
+      <div class="admin-form-grid">${mcInput('paBankChecking', 'Bakiye ($)', p.bankMg)}</div>
       <div class="inline-actions">
         <button class="btn btn-gold btn-sm" id="paBankCheckingBtn">Vadesiz Kaydet</button>
         ${p.hasChecking ? '<button class="btn btn-danger btn-sm" id="paBankCheckingDelBtn">Vadesiz Sil</button>'
           : '<button class="btn btn-success btn-sm" id="paBankOpenCheckingBtn">Vadesiz Aç</button>'}
       </div>
       <h4 style="margin-top:20px">Banka — Vadeli ${p.hasTerm ? '' : '(hesap yok)'}</h4>
-      <div class="admin-form-grid">${mcInput('paBankTerm', 'Bakiye (MC)', p.termBalanceMg || 0)}</div>
+      <div class="admin-form-grid">${mcInput('paBankTerm', 'Bakiye ($)', p.termBalanceMg || 0)}</div>
       <div class="inline-actions">
         <button class="btn btn-gold btn-sm" id="paBankTermBtn">Vadeli Kaydet</button>
         ${p.hasTerm ? '<button class="btn btn-danger btn-sm" id="paBankTermDelBtn">Vadeli Sil</button>'
           : '<button class="btn btn-success btn-sm" id="paBankOpenTermBtn">Vadeli Aç</button>'}
       </div>
       <h4 style="margin-top:20px">Kara Para</h4>
-      <div class="admin-form-grid">${mcInput('paDirtySet', 'Bakiye (MC)', p.dirtyMg)}</div>
+      <div class="admin-form-grid">${mcInput('paDirtySet', 'Bakiye ($)', p.dirtyMg)}</div>
       <button class="btn btn-gold btn-sm" id="paDirtySetBtn" style="margin-top:12px">Kara Para Kaydet</button>`;
     bindMoneyTab();
   } else if (activePlayerTab === 'profile') {
@@ -291,8 +291,8 @@ function renderPlayerAdminModal() {
     el.innerHTML = loan ? `
       <p>Kalan: <strong>${loan.remaining || formatMg(loan.remainingMg)}</strong> — Taksit: ${loan.installment || formatMg(loan.installmentMg)}</p>
       <div class="admin-form-grid">
-        ${mcInput('paLoanRemaining', 'Kalan (MC)', loan.remainingMg)}
-        ${mcInput('paLoanInstallment', 'Taksit (MC)', loan.installmentMg)}
+        ${mcInput('paLoanRemaining', 'Kalan ($)', loan.remainingMg)}
+        ${mcInput('paLoanInstallment', 'Taksit ($)', loan.installmentMg)}
         <div><label>Vade (ms epoch)</label><input id="paLoanDue" type="number" value="${loan.dueAt || Date.now() + 86400000}"></div>
       </div>
       <div class="inline-actions">
@@ -301,8 +301,8 @@ function renderPlayerAdminModal() {
       </div>` : `
       <p class="hint">Aktif kredi yok.</p>
       <div class="admin-form-grid">
-        ${mcInput('paLoanRemaining', 'Anapara/Kalan (MC)', 0)}
-        ${mcInput('paLoanInstallment', 'Taksit (MC)', 0)}
+        ${mcInput('paLoanRemaining', 'Anapara/Kalan ($)', 0)}
+        ${mcInput('paLoanInstallment', 'Taksit ($)', 0)}
         <div><label>Vade (ms epoch)</label><input id="paLoanDue" type="number" value="${Date.now() + 86400000}"></div>
       </div>
       <button class="btn btn-gold btn-sm" id="paLoanSaveBtn">Kredi Oluştur</button>`;
@@ -383,7 +383,8 @@ function renderGlobalEconomy() {
     <div><label>Ekonomi Endeksi</label><input id="gEconIndex" type="number" step="0.01" value="${cb.economyIndex ?? 0}"></div>
     <div><label>Altın Faktörü</label><input id="gGoldFactor" type="number" step="0.01" value="${cb.goldFactor ?? 1}"></div>
     <div><label>Para Arzı</label><input id="gMoneySupply" type="number" value="${cb.moneySupply ?? 0}"></div>
-    <div><label>Belediye Bütçesi (MC)</label><input id="gMunicipal" type="number" step="0.01" value="${cb.municipalBudgetMc ?? 0}"></div>`;
+    <div><label>Belediye Bütçesi ($)</label><input id="gMunicipal" type="number" step="0.01" value="${cb.municipalBudgetMc ?? 0}"></div>
+    <p class="hint">Fiat gücü: <strong>${(cb.fiatStrength ?? 1).toFixed(2)}</strong> · Altın destek %${cb.goldBackingPct ?? '—'} · Devlet %${cb.stateCredibilityPct ?? '—'} · Yatırım %${cb.investmentPct ?? '—'}</p>`;
 
   const companies = economyCatalog.companies || [];
   document.getElementById('globalCompaniesTable').innerHTML = `
@@ -402,7 +403,7 @@ function renderGlobalEconomy() {
     <div><label>Ad</label><input id="gCoName"></div>
     <div><label>Sahip</label><input id="gCoOwner" placeholder="Oyuncu adı"></div>
     <div><label>Ticker</label><input id="gCoTicker"></div>
-    <div><label>Hazine (MC)</label><input id="gCoTreasury" type="number" value="0"></div>
+    <div><label>Hazine ($)</label><input id="gCoTreasury" type="number" value="0"></div>
     <div><label><input type="checkbox" id="gCoListed"> Borsada listeli</label></div>`;
 
   document.getElementById('globalCompaniesTable').querySelectorAll('[data-co-save]').forEach(btn => {
@@ -434,7 +435,7 @@ function renderGlobalEconomy() {
     <div><label>Sembol</label><input id="gTkSymbol" maxlength="6"></div>
     <div><label>Ad</label><input id="gTkName"></div>
     <div><label>Arz</label><input id="gTkSupply" type="number" value="1000"></div>
-    <div><label>Fiyat (MC)</label><input id="gTkPrice" type="number" value="1"></div>`;
+    <div><label>Fiyat ($)</label><input id="gTkPrice" type="number" value="1"></div>`;
 
   document.getElementById('globalTokensTable').querySelectorAll('[data-tk-save]').forEach(btn => {
     btn.onclick = () => {
@@ -680,6 +681,16 @@ document.getElementById('bmAddBtn').onclick = () => doAction('/admin/actions/bla
   itemId: document.getElementById('bmItemId').value,
   grams: +document.getElementById('bmPrice').value
 }, loadAdmin);
+
+document.getElementById('fullResetBtn')?.addEventListener('click', () => {
+  const typed = prompt('Tam sifirlama GERI ALINAMAZ. Onaylamak icin SIFIRLA yazin:');
+  if (typed === 'SIFIRLA') {
+    doAction('/admin/actions/economy/full-reset', {}, () => {
+      alert('Ekonomi sifirlandi. Oturumunuz kapandi; yeniden giris yapin.');
+      logout();
+    });
+  }
+});
 
 document.getElementById('rebuildCbBtn').onclick = () => {
   if (confirm('Merkez Bankası yapısı yeniden kurulacak. Emin misiniz?')) {

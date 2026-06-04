@@ -8,10 +8,15 @@ import com.mceconomy.command.BankCommand;
 import com.mceconomy.command.CompanyCommand;
 import com.mceconomy.command.DashboardCommand;
 import com.mceconomy.command.ExchangeCommand;
+import com.mceconomy.command.FiatCommand;
 import com.mceconomy.command.HeistCommand;
 import com.mceconomy.command.InsuranceCommand;
 import com.mceconomy.command.JusticeCommand;
 import com.mceconomy.command.MayorCommand;
+import com.mceconomy.command.PropertyCommand;
+import com.mceconomy.command.VehicleCommand;
+import com.mceconomy.network.VehicleInputPayload;
+import com.mceconomy.network.VehicleStatePayload;
 import com.mceconomy.command.HelpCommand;
 import com.mceconomy.command.JobCommand;
 import com.mceconomy.command.LoanCommand;
@@ -57,6 +62,8 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 	public void onInitializeServer() {
 		EconomyConfig.load();
 		PayloadTypeRegistry.clientboundPlay().register(EconomyHudPayload.TYPE, EconomyHudPayload.STREAM_CODEC);
+		PayloadTypeRegistry.clientboundPlay().register(VehicleStatePayload.TYPE, VehicleStatePayload.STREAM_CODEC);
+		PayloadTypeRegistry.serverboundPlay().register(VehicleInputPayload.TYPE, VehicleInputPayload.STREAM_CODEC);
 		tickScheduler = new EconomyTickScheduler();
 
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
@@ -133,10 +140,21 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 			VaultCommand.register(dispatcher);
 			HeistCommand.register(dispatcher);
 			BulletinCommand.register(dispatcher);
+			FiatCommand.register(dispatcher);
 			JusticeCommand.register(dispatcher);
 			InsuranceCommand.register(dispatcher);
 			MayorCommand.register(dispatcher);
+			PropertyCommand.register(dispatcher);
+			VehicleCommand.register(dispatcher);
 		});
+
+		net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+				VehicleInputPayload.TYPE, (payload, context) -> {
+					var manager = McEconomyMod.getEconomyManager();
+					if (manager != null && manager.vehicleService() != null) {
+						manager.vehicleService().setInput(context.player().getUUID(), payload);
+					}
+				});
 
 		PlayerBlockBreakEvents.BEFORE.register((world, player, pos, state, blockEntity) -> {
 			if (world.isClientSide() || !(player instanceof ServerPlayer)) {
@@ -169,6 +187,17 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 				return false;
 			}
 			if (CentralBankPlacer.isDepotChest(pos)) {
+				return false;
+			}
+			if (manager.propertyService() != null
+					&& manager.propertyService().isProtectedBlock(pos.getX(), pos.getY(), pos.getZ(),
+					(net.minecraft.server.level.ServerLevel) world)) {
+				player.sendSystemMessage(Component.literal("§c[Ev] §fYapi korunuyor."));
+				return false;
+			}
+			if (manager.companyBuildingService() != null
+					&& manager.companyBuildingService().isProtectedBlock(pos.getX(), pos.getY(), pos.getZ())) {
+				player.sendSystemMessage(Component.literal("§c[Sirket] §fHQ korunuyor."));
 				return false;
 			}
 			return true;

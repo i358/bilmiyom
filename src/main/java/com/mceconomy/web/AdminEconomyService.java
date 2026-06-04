@@ -285,7 +285,9 @@ public final class AdminEconomyService {
 				cb.setEconomyIndex(body.get("economyIndex").getAsDouble());
 			}
 			if (body.has("goldFactor")) {
-				cb.setGoldFactor(body.get("goldFactor").getAsDouble());
+				double factor = body.get("goldFactor").getAsDouble();
+				cb.setGoldFactor(factor);
+				GoldStandard.setGoldFactor(factor);
 			}
 			if (body.has("moneySupply")) {
 				cb.updateMoneySupply(body.get("moneySupply").getAsLong());

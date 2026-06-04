@@ -356,8 +356,10 @@ public final class DashboardActionService {
 
 	public static ActionResult createCompany(UUID uuid, String name) {
 		try {
-			if (McEconomyMod.getEconomyManager().companyManager().createCompany(name, uuid)) {
-				return ActionResult.ok("Şirket kuruldu: " + name);
+			var manager = McEconomyMod.getEconomyManager();
+			if (manager.companyManager().createCompany(name, uuid)) {
+				manager.companyManager().find(name).ifPresent(manager::onCompanyCreated);
+				return ActionResult.ok("Şirket kuruldu ve bina insa edildi: " + name);
 			}
 		} catch (Exception e) {
 			return ActionResult.fail("Şirket kurulamadı.");

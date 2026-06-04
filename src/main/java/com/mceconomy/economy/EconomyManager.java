@@ -4,6 +4,7 @@ import com.mceconomy.McEconomyMod;
 import com.mceconomy.bank.BankService;
 import com.mceconomy.bank.InterestEngine;
 import com.mceconomy.bank.LoanManager;
+import com.mceconomy.company.Company;
 import com.mceconomy.company.CompanyManager;
 import com.mceconomy.company.CompanyProductPipeline;
 import com.mceconomy.company.CompanyStashService;
@@ -81,6 +82,14 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import com.mceconomy.persistence.repo.PriceHistoryRepository;
+import com.mceconomy.company.CompanyBuildingService;
+import com.mceconomy.government.EconomyMinisterService;
+import com.mceconomy.persistence.repo.CompanyBuildingRepository;
+import com.mceconomy.persistence.repo.PropertyRepository;
+import com.mceconomy.persistence.repo.VehicleRepository;
+import com.mceconomy.property.PropertyService;
+import com.mceconomy.vehicle.VehicleService;
+import com.mceconomy.world.StructureBuildQueue;
 import com.mceconomy.web.EconomyWebServer;
 import com.mceconomy.web.PriceHistoryService;
 import net.minecraft.server.level.ServerPlayer;
@@ -151,6 +160,10 @@ public final class EconomyManager {
 	private ForeignInvestorMarketService foreignInvestorMarket;
 	private PriceHistoryService priceHistoryService;
 	private EconomyWebServer economyWebServer;
+	private PropertyService propertyService;
+	private CompanyBuildingService companyBuildingService;
+	private VehicleService vehicleService;
+	private EconomyMinisterService economyMinisterService;
 
 	private MinecraftServer server;
 	private boolean loaded;
@@ -198,6 +211,7 @@ public final class EconomyManager {
 			centralBank = new CentralBank(database);
 			centralBank.load();
 			GoldStandard.setGoldFactor(centralBank.getGoldFactor());
+			GoldStandard.setFiatStrength(centralBank.getFiatStrength());
 			taxService.bindCentralBank(centralBank);
 			inflationSystem = new InflationSystem();
 			eventManager = new EconomyEventManager();
@@ -223,9 +237,22 @@ public final class EconomyManager {
 			SalaryPaymentRepository salaryPaymentRepository = new SalaryPaymentRepository(database.connection());
 			playerEmploymentService = new PlayerEmploymentService(
 					playerEmploymentRepository, salaryPaymentRepository, profiles,
-					companyManager, currencyService, workforceService);
+					companyManager, currencyService, workforceService, taxService);
 			playerEmploymentService.load();
 			workforceService.bindPlayerEmployment(playerEmploymentService);
+			workforceService.bindTaxService(taxService);
+
+			PropertyRepository propertyRepository = new PropertyRepository(database.connection());
+			propertyService = new PropertyService(propertyRepository, currencyService, taxService);
+			propertyService.load();
+			CompanyBuildingRepository companyBuildingRepository = new CompanyBuildingRepository(database.connection());
+			companyBuildingService = new CompanyBuildingService(companyBuildingRepository, companyManager);
+			companyBuildingService.load();
+			VehicleRepository vehicleRepository = new VehicleRepository(database.connection());
+			vehicleService = new VehicleService(vehicleRepository, currencyService);
+			vehicleService.load();
+			economyMinisterService = new EconomyMinisterService(database.connection(), profiles, playerRepository);
+			economyMinisterService.load();
 
 			jobManager = new JobManager(profiles, currencyService, taxService);
 			marketService.bindJobManager(jobManager);
@@ -439,7 +466,11 @@ public final class EconomyManager {
 			goldReserveService.refresh(server);
 		}
 		inflationSystem.update(centralBank, bankService, profiles,
-				marketService.economyIndex(), marketService.priceEngine(), goldReserveService);
+				marketService.economyIndex(), marketService.priceEngine(), goldReserveService,
+				exchangeService, companyManager, foreignInvestorMarket);
+		if (goldReserveService != null) {
+			goldReserveService.logReserveStatus(centralBank.getMoneySupply());
+		}
 		applyGoldLaunderMacroPressure();
 		auditReserveIntegrity();
 		if (bulletinService != null && goldReserveService != null && server != null) {
@@ -753,9 +784,12 @@ public final class EconomyManager {
 		bankService.load();
 		loanManager.load();
 		marketService.load();
+		marketService.priceEngine().setGlobalMultiplier(EconomyConfig.fiatBaseGlobalMultiplier());
 		customBlackMarket.load();
 		playerBlackMarket.load();
 		centralBank.load();
+		GoldStandard.setGoldFactor(centralBank.getGoldFactor());
+		GoldStandard.setFiatStrength(centralBank.getFiatStrength());
 		companyManager.load();
 		companyStashService.load();
 		companyVaultService.load();
@@ -771,8 +805,20 @@ public final class EconomyManager {
 		insuranceService.load();
 		mayorService.load();
 		mayorService.ensureElectionScheduled();
+		if (propertyService != null) {
+			propertyService.load();
+		}
+		if (vehicleService != null) {
+			vehicleService.load();
+		}
+		if (economyMinisterService != null) {
+			economyMinisterService.load();
+		}
 		if (securityCameraService != null) {
 			securityCameraService.onNightEnds();
+		}
+		if (economyWebServer != null) {
+			economyWebServer.clearSessions();
 		}
 		goldReserveService.refresh(server);
 		try {
@@ -786,6 +832,7 @@ public final class EconomyManager {
 			McEconomyMod.LOGGER.error("Depo defteri yeniden senkron", e);
 		}
 		com.mceconomy.bootstrap.EconomyBootstrap.seed(this);
+		syncHudForOnlinePlayers();
 	}
 
 	public FacilityDepotService facilityDepotService() {
@@ -954,5 +1001,52 @@ public final class EconomyManager {
 
 	public PriceHistoryService priceHistoryService() {
 		return priceHistoryService;
+	}
+
+	public PropertyService propertyService() {
+		return propertyService;
+	}
+
+	public CompanyBuildingService companyBuildingService() {
+		return companyBuildingService;
+	}
+
+	public VehicleService vehicleService() {
+		return vehicleService;
+	}
+
+	public EconomyMinisterService economyMinisterService() {
+		return economyMinisterService;
+	}
+
+	public void onCompanyCreated(Company company) {
+		if (server == null || companyBuildingService == null) {
+			return;
+		}
+		try {
+			if (companyBuildingService.canBuildForOwner(company.ownerUuid())) {
+				companyBuildingService.scheduleHeadquarters(company, server.overworld(), company.ownerUuid());
+			}
+		} catch (SQLException e) {
+			McEconomyMod.LOGGER.error("HQ insaat plani", e);
+		}
+	}
+
+	public void onStructureBuildTick() {
+		if (server != null) {
+			StructureBuildQueue.get().tick(server);
+		}
+	}
+
+	public void onVehicleDriveTick() {
+		if (vehicleService != null && server != null) {
+			vehicleService.onDriveTick(server);
+		}
+	}
+
+	public void onPropertyRentTick() {
+		if (propertyService != null && server != null) {
+			propertyService.onRentTick(server);
+		}
 	}
 }

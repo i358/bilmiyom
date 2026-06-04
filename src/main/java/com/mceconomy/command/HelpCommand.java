@@ -84,6 +84,7 @@ public final class HelpCommand {
 				line("§5Gece: §7muhafizlar uyur — §edepo sandiklari §7acik, ates yok"),
 				line("§e/soygun baslat §7— Altin rezerv soygunu (gece hasarsiz RP)"),
 				line("§e/bulten §7— Resmi ekonomi bulteni (soygun, depo, makro)"),
+				line("§e/para durum §7— Fiat $ gucu (altin + devlet + yatirim)"),
 				line("§7Sabah depoda eksiklik varsa sehir geneli ust arama")
 		);
 	}

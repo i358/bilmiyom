@@ -17,12 +17,14 @@ public final class PlayerEconomyProfile {
 	private boolean blacklisted;
 	private boolean bankCertified;
 	private boolean centralBankOfficial;
+	private boolean economyMinister;
 	private String dashboardPasswordHash;
 	private String dashboardPasswordSalt;
 
 	public PlayerEconomyProfile(UUID uuid, String name, long balance, long dirtyBalance, int creditScore,
 			JobType jobType, long lastTaxAt, boolean accountFrozen, boolean blacklisted, boolean bankCertified,
-			boolean centralBankOfficial, String dashboardPasswordHash, String dashboardPasswordSalt) {
+			boolean centralBankOfficial, boolean economyMinister, String dashboardPasswordHash,
+			String dashboardPasswordSalt) {
 		this.uuid = uuid;
 		this.name = name;
 		this.wallet = new PlayerWallet(balance);
@@ -34,13 +36,14 @@ public final class PlayerEconomyProfile {
 		this.blacklisted = blacklisted;
 		this.bankCertified = bankCertified;
 		this.centralBankOfficial = centralBankOfficial;
+		this.economyMinister = economyMinister;
 		this.dashboardPasswordHash = dashboardPasswordHash;
 		this.dashboardPasswordSalt = dashboardPasswordSalt;
 	}
 
 	public static PlayerEconomyProfile createNew(UUID uuid, String name, long startingBalance) {
 		return new PlayerEconomyProfile(uuid, name, startingBalance, 0, 650, null, 0,
-				false, false, false, false, null, null);
+				false, false, false, false, false, null, null);
 	}
 
 	public UUID uuid() {
@@ -113,6 +116,14 @@ public final class PlayerEconomyProfile {
 
 	public void setCentralBankOfficial(boolean centralBankOfficial) {
 		this.centralBankOfficial = centralBankOfficial;
+	}
+
+	public boolean economyMinister() {
+		return economyMinister;
+	}
+
+	public void setEconomyMinister(boolean economyMinister) {
+		this.economyMinister = economyMinister;
 	}
 
 	public String dashboardPasswordHash() {

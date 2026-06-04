@@ -14,7 +14,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,6 +40,16 @@ public final class InsuranceService {
 		for (InsurancePolicy policy : repository.loadAllActive()) {
 			activePolicies.put(key(policy), policy);
 		}
+	}
+
+	public List<InsurancePolicy> policiesFor(UUID owner) {
+		List<InsurancePolicy> list = new ArrayList<>();
+		for (InsurancePolicy p : activePolicies.values()) {
+			if (p.ownerUuid().equals(owner) && p.active()) {
+				list.add(p);
+			}
+		}
+		return list;
 	}
 
 	public boolean subscribePersonal(UUID owner) throws SQLException {

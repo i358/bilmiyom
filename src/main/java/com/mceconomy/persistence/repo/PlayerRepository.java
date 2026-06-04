@@ -72,9 +72,9 @@ public final class PlayerRepository {
 
 					dirty_balance, account_frozen, blacklisted, bank_certified,
 
-					central_bank_official, dashboard_password_hash, dashboard_password_salt)
+					central_bank_official, economy_minister, dashboard_password_hash, dashboard_password_salt)
 
-				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 
 				ON CONFLICT(uuid) DO UPDATE SET
 
@@ -97,6 +97,8 @@ public final class PlayerRepository {
 					bank_certified=excluded.bank_certified,
 
 					central_bank_official=excluded.central_bank_official,
+
+					economy_minister=excluded.economy_minister,
 
 					dashboard_password_hash=excluded.dashboard_password_hash,
 
@@ -126,9 +128,11 @@ public final class PlayerRepository {
 
 			ps.setInt(11, profile.centralBankOfficial() ? 1 : 0);
 
-			ps.setString(12, profile.dashboardPasswordHash());
+			ps.setInt(12, profile.economyMinister() ? 1 : 0);
 
-			ps.setString(13, profile.dashboardPasswordSalt());
+			ps.setString(13, profile.dashboardPasswordHash());
+
+			ps.setString(14, profile.dashboardPasswordSalt());
 
 			ps.executeUpdate();
 
@@ -233,6 +237,8 @@ public final class PlayerRepository {
 				getIntColumn(rs, "bank_certified", 0) == 1,
 
 				getIntColumn(rs, "central_bank_official", 0) == 1,
+
+				getIntColumn(rs, "economy_minister", 0) == 1,
 
 				getStringColumn(rs, "dashboard_password_hash", null),
 

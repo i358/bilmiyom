@@ -86,8 +86,13 @@ public final class VehicleService {
 		if (boat == null) {
 			return "Spawn basarisiz.";
 		}
-		boat.setPos(player.getX(), player.getY(), player.getZ());
+		boat.setPos(player.getX(), player.getY() + 0.05, player.getZ());
+		boat.setYRot(player.getYRot());
+		boat.setYBodyRot(player.getYRot());
 		boat.addTag(VEHICLE_TAG);
+		boat.setCustomName(net.minecraft.network.chat.Component.literal(
+				"§6[Arac] §f" + (v.model() == null ? "sedan" : v.model())));
+		boat.setCustomNameVisible(true);
 		level.addFreshEntity(boat);
 		player.startRiding(boat);
 		PlayerVehicle updated = new PlayerVehicle(v.id(), v.ownerUuid(), v.model(), v.garagePos(),

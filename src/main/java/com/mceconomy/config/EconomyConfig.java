@@ -288,6 +288,11 @@ public final class EconomyConfig {
 		return data.maxEconomyMinisters;
 	}
 
+	/** Aktif bakan sayisinin bu orani kadar EVET oyu gerekir (or. 0.67 = 2/3). */
+	public static double decreeVoteApprovalRatio() {
+		return data.decreeVoteApprovalRatio;
+	}
+
 	public static long propertyCottagePriceMg() {
 		return data.propertyCottagePriceMg;
 	}
@@ -839,6 +844,7 @@ public final class EconomyConfig {
 		public int maxActiveVehicles = 16;
 		public long vehicleFuelCostPerSecondMg = 500;
 		public int maxEconomyMinisters = 3;
+		public double decreeVoteApprovalRatio = 0.67;
 		public long propertyCottagePriceMg = 2_000_000;
 		public long propertyHousePriceMg = 8_000_000;
 		public long propertyVillaPriceMg = 25_000_000;

@@ -77,6 +77,7 @@ public final class EconomyWebServer {
 			server.createContext("/api/insurance", this::handleInsurance);
 			server.createContext("/api/guild", this::handleGuild);
 			server.createContext("/api/municipal", this::handleMunicipal);
+			server.createContext("/api/government", this::handleGovernment);
 			server.createContext("/api/admin/trades/disputes", this::handleAdminTradeDisputes);
 			server.createContext("/api/actions/", this::handlePlayerAction);
 			server.createContext("/api/admin/overview", this::handleAdminOverview);
@@ -432,6 +433,60 @@ public final class EconomyWebServer {
 		sendJson(exchange, 200, data);
 	}
 
+	private void handleGovernment(HttpExchange exchange) throws IOException {
+		Optional<WebSession> session = requireSession(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
+			return;
+		}
+		UUID uuid = session.get().playerUuid();
+		var minister = McEconomyMod.getEconomyManager().economyMinisterService();
+		JsonObject data = new JsonObject();
+		data.addProperty("isMinister", minister != null && minister.isMinister(uuid));
+		data.addProperty("ministerCount", minister != null ? minister.ministerCount() : 0);
+		data.addProperty("requiredYesVotes", minister != null ? minister.requiredYesVotes() : 1);
+		JsonArray pending = new JsonArray();
+		JsonArray recent = new JsonArray();
+		if (minister != null) {
+			try {
+				for (var d : minister.pendingDecrees()) {
+					JsonObject row = new JsonObject();
+					row.addProperty("id", d.id());
+					row.addProperty("type", d.type());
+					row.addProperty("payloadJson", d.payloadJson());
+					row.addProperty("createdAt", d.createdAt());
+					row.addProperty("issuedBy", d.issuedBy());
+					int yes = 0;
+					JsonArray votes = new JsonArray();
+					for (var v : minister.votesForDecree(d.id())) {
+						if (v.yes()) {
+							yes++;
+						}
+						JsonObject vr = new JsonObject();
+						vr.addProperty("ministerUuid", v.ministerUuid().toString());
+						vr.addProperty("yes", v.yes());
+						votes.add(vr);
+					}
+					row.addProperty("yesVotes", yes);
+					row.add("votes", votes);
+					pending.add(row);
+				}
+				for (var d : minister.recentDecrees(12)) {
+					JsonObject row = new JsonObject();
+					row.addProperty("id", d.id());
+					row.addProperty("type", d.type());
+					row.addProperty("status", d.status());
+					row.addProperty("createdAt", d.createdAt());
+					recent.add(row);
+				}
+			} catch (Exception ignored) {
+			}
+		}
+		data.add("pendingDecrees", pending);
+		data.add("recentDecrees", recent);
+		sendJson(exchange, 200, data);
+	}
+
 	private void handleMunicipal(HttpExchange exchange) throws IOException {
 		Optional<WebSession> session = requireSession(exchange);
 		if (session.isEmpty()) {
@@ -619,6 +674,27 @@ public final class EconomyWebServer {
 					text(body, "role"), longVal(body, "salaryMg", 0));
 			case "employment/cancel-application" -> DashboardActionService.employmentCancelApplication(uuid);
 			case "employment/quit" -> DashboardActionService.employmentQuit(uuid);
+			case "trade/invite" -> withOnline(uuid, p -> DashboardActionService.tradeInvite(uuid, text(body, "target")));
+			case "trade/accept" -> DashboardActionService.tradeAccept(uuid);
+			case "trade/dispute" -> DashboardActionService.tradeDispute(uuid, longVal(body, "tradeId", 0),
+					text(body, "reason"));
+			case "insurance/personal/subscribe" -> DashboardActionService.insurancePersonal(uuid, true);
+			case "insurance/personal/cancel" -> DashboardActionService.insurancePersonal(uuid, false);
+			case "insurance/company/subscribe" -> DashboardActionService.insuranceCompany(uuid, text(body, "company"), true);
+			case "insurance/company/cancel" -> DashboardActionService.insuranceCompany(uuid, text(body, "company"), false);
+			case "guild/create" -> DashboardActionService.guildCreate(uuid, text(body, "name"));
+			case "guild/join" -> DashboardActionService.guildJoin(uuid, text(body, "name"));
+			case "guild/leave" -> DashboardActionService.guildLeave(uuid);
+			case "guild/deposit" -> DashboardActionService.guildDeposit(uuid, displayMcVal(body, 0));
+			case "guild/withdraw" -> DashboardActionService.guildWithdraw(uuid, displayMcVal(body, 0));
+			case "guild/strike" -> DashboardActionService.guildStrike(uuid, intVal(body, "minutes", 30));
+			case "guild/bargain" -> DashboardActionService.guildBargain(uuid, text(body, "message"));
+			case "municipal/candidate" -> DashboardActionService.municipalCandidate(uuid);
+			case "municipal/vote" -> DashboardActionService.municipalVote(uuid, text(body, "candidate"));
+			case "municipal/spend" -> DashboardActionService.municipalSpend(uuid, displayMcVal(body, 0), text(body, "purpose"));
+			case "government/decree/propose" -> DashboardActionService.proposeDecree(uuid, text(body, "type"), text(body, "payloadJson"));
+			case "government/decree/vote" -> DashboardActionService.voteDecree(uuid, longVal(body, "decreeId", 0),
+					body.has("yes") && body.get("yes").getAsBoolean());
 			default -> ActionResult.fail("Bilinmeyen işlem: " + action);
 		};
 	}

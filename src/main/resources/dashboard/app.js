@@ -1300,41 +1300,139 @@ document.getElementById('slotBtn').onclick = () => doAction('/actions/casino/pla
 }, casinoResult);
 
 async function loadMacroPanel() {
-  const me = await api('/api/me');
+  const m = me || await api('/me');
   const el = document.getElementById('macroPanel');
-  if (!el || !me) return;
-  el.innerHTML = `<p>Altın faktörü: <strong>${me.goldFactor}</strong></p>
-    <p>Enflasyon: <strong>${(me.inflationRate * 100).toFixed(2)}%</strong></p>
-    <p>Belediye bütçesi: <strong>${me.municipalBudget || '—'}</strong></p>
+  if (!el) return;
+  const goldFactor = m?.goldFactor ?? '—';
+  const inflationPct = ((m?.inflationRate ?? 0) * 100).toFixed(2);
+  const budget = m?.municipalBudget ?? '—';
+  const fiat = m?.fiatStrength != null ? m.fiatStrength.toFixed(2) : null;
+  el.innerHTML = `
+    ${fiat != null ? `<p>Fiat gücü ($): <strong>${fiat}</strong></p>` : ''}
+    <p>Altın faktörü: <strong>${goldFactor}</strong></p>
+    <p>Enflasyon: <strong>${inflationPct}%</strong></p>
+    <p>Belediye bütçesi: <strong>${budget}</strong></p>
     <p class="hint">Detay: oyunda <code>/para durum</code></p>`;
 }
 async function loadInsurancePanel() {
-  const d = await api('/api/insurance');
+  const d = await api('/insurance');
   const el = document.getElementById('insurancePanel');
   if (!el) return;
   const rows = (d?.policies || []).map(p =>
-    `<div class="list-row">${p.type} — ${p.premium} ${p.active ? '✓' : '✗'}</div>`).join('');
-  el.innerHTML = rows || '<p class="hint">Aktif poliçe yok. Oyunda /sigorta</p>';
+    `<div class="list-row">${p.type ?? '—'} — ${p.premium ?? '—'} ${p.active ? '✓' : '✗'}</div>`).join('');
+  el.innerHTML = `
+    ${rows || '<p class="hint">Aktif poliçe yok.</p>'}
+    <div class="form-row" style="margin-top:12px">
+      <button class="btn btn-gold btn-sm" id="insPersonalSub">Kişisel al</button>
+      <button class="btn btn-ghost btn-sm" id="insPersonalCancel">Kişisel iptal</button>
+    </div>
+    <label>Şirket adı (sahip olduğunuz)</label>
+    <input id="insCompanyName" placeholder="Şirket">
+    <div class="form-row">
+      <button class="btn btn-gold btn-sm" id="insCompanySub">Şirket poliçesi al</button>
+      <button class="btn btn-ghost btn-sm" id="insCompanyCancel">Şirket iptal</button>
+    </div>`;
+  document.getElementById('insPersonalSub')?.addEventListener('click', () =>
+    doAction('/actions/insurance/personal/subscribe', {}, loadInsurancePanel));
+  document.getElementById('insPersonalCancel')?.addEventListener('click', () =>
+    doAction('/actions/insurance/personal/cancel', {}, loadInsurancePanel));
+  document.getElementById('insCompanySub')?.addEventListener('click', () =>
+    doAction('/actions/insurance/company/subscribe', { company: document.getElementById('insCompanyName').value }, loadInsurancePanel));
+  document.getElementById('insCompanyCancel')?.addEventListener('click', () =>
+    doAction('/actions/insurance/company/cancel', { company: document.getElementById('insCompanyName').value }, loadInsurancePanel));
 }
 async function loadTradePanel() {
-  const d = await api('/api/trades');
+  const d = await api('/trades');
   const el = document.getElementById('tradePanel');
   if (!el) return;
-  el.innerHTML = (d?.trades || []).map(t =>
-    `<div class="list-row">#${t.id} ${t.initiator} ↔ ${t.partner} — ${t.status}</div>`).join('') || '<p class="hint">Takas yok</p>';
+  const hist = (d?.trades || []).map(t =>
+    `<div class="list-row">#${t.id ?? '?'} ${t.initiator ?? '—'} ↔ ${t.partner ?? '—'} — ${t.status ?? '—'}
+      <button class="btn btn-ghost btn-sm trade-dispute-btn" data-id="${t.id}">Şikayet</button></div>`).join('');
+  el.innerHTML = `
+    <p class="hint">Aktif takas için oyunda olmalısınız.</p>
+    <label>Oyuncu adı</label><input id="tradePartner" placeholder="Hedef">
+    <button class="btn btn-gold btn-sm" id="tradeInviteBtn">Davet gönder</button>
+    <button class="btn btn-accent btn-sm" id="tradeAcceptBtn">Daveti kabul et</button>
+    <hr style="border-color:var(--border);margin:16px 0">
+    <h4 style="margin:0 0 8px;color:var(--gold)">Geçmiş</h4>
+    ${hist || '<p class="hint">Takas yok</p>'}`;
+  document.getElementById('tradeInviteBtn')?.addEventListener('click', () =>
+    doAction('/actions/trade/invite', { target: document.getElementById('tradePartner').value }, loadTradePanel));
+  document.getElementById('tradeAcceptBtn')?.addEventListener('click', () =>
+    doAction('/actions/trade/accept', {}, loadTradePanel));
+  el.querySelectorAll('.trade-dispute-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const reason = prompt('Şikayet sebebi:') || '';
+      doAction('/actions/trade/dispute', { tradeId: +btn.dataset.id, reason }, loadTradePanel);
+    });
+  });
 }
 async function loadGuildPanel() {
-  const d = await api('/api/guild');
+  const d = await api('/guild');
   const el = document.getElementById('guildPanel');
   if (!el) return;
-  el.innerHTML = d?.name ? `<p><strong>${d.name}</strong> — Kasa: ${d.treasury}</p>` : '<p class="hint">Lonca yok. /lonca kur</p>';
+  const status = d?.name
+    ? `<p><strong>${d.name}</strong> — Kasa: ${d.treasury ?? '—'}${d.strikeActive ? ' <span class="badge badge-warn">Grev</span>' : ''}</p>`
+    : '<p class="hint">Loncada değilsiniz.</p>';
+  el.innerHTML = `
+    ${status}
+    <label>Lonca adı</label><input id="guildNameInput" placeholder="Lonca">
+    <div class="form-row">
+      <button class="btn btn-gold btn-sm" id="guildCreateBtn">Kur</button>
+      <button class="btn btn-accent btn-sm" id="guildJoinBtn">Katıl</button>
+      <button class="btn btn-ghost btn-sm" id="guildLeaveBtn">Ayrıl</button>
+    </div>
+    <label>Tutar (MC)</label><input id="guildMc" type="number" min="1" value="100">
+    <div class="form-row">
+      <button class="btn btn-gold btn-sm" id="guildDepositBtn">Kasaya yatır</button>
+      <button class="btn btn-ghost btn-sm" id="guildWithdrawBtn">Kasadan çek (lider)</button>
+    </div>
+    <label>Grev süresi (dk)</label><input id="guildStrikeMin" type="number" min="1" max="120" value="30">
+    <button class="btn btn-danger btn-sm" id="guildStrikeBtn">Grev başlat</button>
+    <label>Pazarlık mesajı</label><textarea id="guildBargainMsg" placeholder="Talep..."></textarea>
+    <button class="btn btn-ghost btn-sm" id="guildBargainBtn">Mesaj gönder</button>`;
+  document.getElementById('guildCreateBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/create', { name: document.getElementById('guildNameInput').value }, loadGuildPanel));
+  document.getElementById('guildJoinBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/join', { name: document.getElementById('guildNameInput').value }, loadGuildPanel));
+  document.getElementById('guildLeaveBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/leave', {}, loadGuildPanel));
+  document.getElementById('guildDepositBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/deposit', { mc: +document.getElementById('guildMc').value }, loadGuildPanel));
+  document.getElementById('guildWithdrawBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/withdraw', { mc: +document.getElementById('guildMc').value }, loadGuildPanel));
+  document.getElementById('guildStrikeBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/strike', { minutes: +document.getElementById('guildStrikeMin').value }, loadGuildPanel));
+  document.getElementById('guildBargainBtn')?.addEventListener('click', () =>
+    doAction('/actions/guild/bargain', { message: document.getElementById('guildBargainMsg').value }, loadGuildPanel));
 }
 async function loadMunicipalPanel() {
-  const d = await api('/api/municipal');
+  const d = await api('/municipal');
   const el = document.getElementById('municipalPanel');
   if (!el) return;
-  const cands = (d?.candidates || []).map(c => `<li>${c.name}</li>`).join('');
-  el.innerHTML = `<p>Başkan: <strong>${d.mayorName}</strong></p><p>Bütçe: ${d.budget}</p><ul>${cands}</ul>`;
+  const cands = (d?.candidates || []).map(c =>
+    `<option value="${c.name ?? ''}">${c.name ?? '—'}</option>`).join('');
+  el.innerHTML = `
+    <p>Başkan: <strong>${d?.mayorName ?? '—'}</strong></p>
+    <p>Bütçe: ${d?.budget ?? '—'}</p>
+    <button class="btn btn-gold btn-sm" id="munCandidateBtn">Aday ol</button>
+    <label>Aday seç</label>
+    <select id="munVoteSelect"><option value="">—</option>${cands}</select>
+    <button class="btn btn-accent btn-sm" id="munVoteBtn">Oy ver</button>
+    <hr style="border-color:var(--border);margin:16px 0">
+    <p class="hint">Bütçe harcaması yalnızca başkan (oyunda).</p>
+    <label>Tutar (MC)</label><input id="munSpendMc" type="number" min="1" value="1000">
+    <label>Açıklama</label><input id="munSpendPurpose" placeholder="Proje / etkinlik">
+    <button class="btn btn-gold btn-sm" id="munSpendBtn">Harcama yap</button>`;
+  document.getElementById('munCandidateBtn')?.addEventListener('click', () =>
+    doAction('/actions/municipal/candidate', {}, loadMunicipalPanel));
+  document.getElementById('munVoteBtn')?.addEventListener('click', () =>
+    doAction('/actions/municipal/vote', { candidate: document.getElementById('munVoteSelect').value }, loadMunicipalPanel));
+  document.getElementById('munSpendBtn')?.addEventListener('click', () =>
+    doAction('/actions/municipal/spend', {
+      mc: +document.getElementById('munSpendMc').value,
+      purpose: document.getElementById('munSpendPurpose').value
+    }, loadMunicipalPanel));
 }
 function loadPropertyPanel() {
   const el = document.getElementById('propertyPanel');
@@ -1345,15 +1443,70 @@ function loadVehiclePanel() {
   if (el) el.innerHTML = '<p class="hint">Araç spawn ve sürüş client mod ile.</p>';
 }
 async function loadGovernmentPanel() {
-  const me = await api('/api/me');
+  const m = me || await api('/me');
+  const gov = await api('/government');
   const el = document.getElementById('governmentPanel');
   if (!el) return;
-  if (me?.isEconomyMinister) {
-    el.innerHTML = '<p class="pnl-up">Ekonomi Bakanı yetkisindesiniz. Emirler: /ekonomi bakan …</p>';
-  } else {
+  const isMinister = !!(gov?.isMinister || m?.isEconomyMinister);
+  if (!isMinister) {
     el.innerHTML = '<p class="hint">Başvuru: <code>/ekonomi bakan basvur &lt;sebep&gt;</code></p>';
+    return;
   }
+  const requiredVotes = gov.requiredYesVotes ?? 1;
+  const pending = (gov.pendingDecrees || []).map(d =>
+    `<div class="list-row">#${d.id ?? '?'} <strong>${d.type ?? '—'}</strong> — ${d.yesVotes ?? 0}/${requiredVotes} onay
+      <button class="btn btn-gold btn-sm decree-yes" data-id="${d.id}">Evet</button>
+      <button class="btn btn-ghost btn-sm decree-no" data-id="${d.id}">Hayır</button></div>`).join('');
+  const recent = (gov.recentDecrees || []).map(d =>
+    `<div class="list-row">#${d.id ?? '?'} ${d.type ?? '—'} — ${d.status ?? '—'}</div>`).join('');
+  el.innerHTML = `
+    <p class="pnl-up">Kabine oylaması: ${gov.ministerCount ?? 0} bakan, ${requiredVotes} evet gerekir.</p>
+    <label>Emir tipi</label>
+    <select id="decreeType">
+      <option value="interest">interest (faiz)</option>
+      <option value="tax">tax (vergi)</option>
+      <option value="bulletin">bulletin (bülten)</option>
+      <option value="market_multiplier">market_multiplier</option>
+    </select>
+    <label>JSON payload</label>
+    <textarea id="decreePayload" placeholder='{"baseRate":0.05}'></textarea>
+    <button class="btn btn-gold btn-sm" id="decreeProposeBtn">Emir teklif et</button>
+    <h4 style="margin:16px 0 8px;color:var(--gold)">Bekleyen</h4>
+    ${pending || '<p class="hint">Bekleyen emir yok</p>'}
+    <h4 style="margin:16px 0 8px;color:var(--gold)">Geçmiş</h4>
+    ${recent || '<p class="hint">—</p>'}`;
+  document.getElementById('decreeProposeBtn')?.addEventListener('click', () =>
+    doAction('/actions/government/decree/propose', {
+      type: document.getElementById('decreeType').value,
+      payloadJson: document.getElementById('decreePayload').value
+    }, loadGovernmentPanel));
+  el.querySelectorAll('.decree-yes').forEach(btn => btn.addEventListener('click', () =>
+    doAction('/actions/government/decree/vote', { decreeId: +btn.dataset.id, yes: true }, loadGovernmentPanel)));
+  el.querySelectorAll('.decree-no').forEach(btn => btn.addEventListener('click', () =>
+    doAction('/actions/government/decree/vote', { decreeId: +btn.dataset.id, yes: false }, loadGovernmentPanel)));
 }
+
+function setupMobileNav() {
+  const sidebar = document.getElementById('sidebarNav');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const burger = document.getElementById('navHamburger');
+  const close = () => {
+    sidebar?.classList.remove('open');
+    backdrop?.classList.remove('visible');
+    backdrop?.classList.add('hidden');
+  };
+  burger?.addEventListener('click', () => {
+    sidebar?.classList.toggle('open');
+    const open = sidebar?.classList.contains('open');
+    backdrop?.classList.toggle('hidden', !open);
+    backdrop?.classList.toggle('visible', !!open);
+  });
+  backdrop?.addEventListener('click', close);
+  document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => { if (window.innerWidth <= 900) close(); });
+  });
+}
+setupMobileNav();
 
 document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {
   btn.addEventListener('click', () => {

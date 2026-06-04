@@ -166,18 +166,33 @@ public final class CentralBankPlacer {
 	}
 
 	public static void setupIfNeeded(MinecraftServer server) {
-		restoreBoundsFromConfig();
-		if (!EconomyConfig.spawnBankEnabled()) {
-			return;
+		server.execute(() -> setupIfNeededOnMainThread(server));
+	}
+
+	private static void setupIfNeededOnMainThread(MinecraftServer server) {
+		try {
+			restoreBoundsFromConfig();
+			if (!EconomyConfig.spawnBankEnabled()) {
+				return;
+			}
+			ServerLevel level = server.overworld();
+			if (EconomyConfig.spawnBankBuilt() && bankOrigin != null
+					&& isCentralBankStructureIntact(level, bankOrigin)) {
+				applyLayoutFromOrigin(bankOrigin);
+				ensureHubNpcs(level, bankOrigin);
+				return;
+			}
+			if (EconomyConfig.spawnBankBuilt() && bankOrigin != null) {
+				McEconomyMod.LOGGER.warn(
+						"Merkez Bankasi kayitli ancak yapi eksik; yeniden insa ediliyor: {}", bankOrigin);
+			}
+			clearAllKnownSites(level);
+			removeExisting(level);
+			EconomyConfig.setSpawnBankBuilt(false);
+			buildAt(level, computeRemoteFlatOrigin(level));
+		} catch (Exception e) {
+			McEconomyMod.LOGGER.error("Merkez Bankasi kurulumu basarisiz", e);
 		}
-		ServerLevel level = server.overworld();
-		if (EconomyConfig.spawnBankBuilt() && bankOrigin != null && isCentralBankStructureIntact(level, bankOrigin)) {
-			return;
-		}
-		clearAllKnownSites(level);
-		removeExisting(level);
-		EconomyConfig.setSpawnBankBuilt(false);
-		buildAt(level, computeRemoteFlatOrigin(level));
 	}
 
 	public static void rebuild(MinecraftServer server) {
@@ -186,12 +201,16 @@ public final class CentralBankPlacer {
 
 	/** anchor: komutu kullanan oyuncu — ayni Y, 4 blok onde; null ise config/spawn. */
 	public static void rebuild(MinecraftServer server, net.minecraft.server.level.ServerPlayer anchor) {
-		ServerLevel level = server.overworld();
-		clearAllKnownSites(level);
-		removeExisting(level);
-		EconomyConfig.setSpawnBankBuilt(false);
-		BlockPos origin = anchor != null ? computeOriginNearPlayer(anchor) : computeRemoteFlatOrigin(level);
-		buildAt(level, origin);
+		try {
+			ServerLevel level = server.overworld();
+			clearAllKnownSites(level);
+			removeExisting(level);
+			EconomyConfig.setSpawnBankBuilt(false);
+			BlockPos origin = anchor != null ? computeOriginNearPlayer(anchor) : computeRemoteFlatOrigin(level);
+			buildAt(level, origin);
+		} catch (Exception e) {
+			McEconomyMod.LOGGER.error("Merkez Bankasi yeniden insa basarisiz", e);
+		}
 	}
 
 	public static void clearAllKnownSites(ServerLevel level) {
@@ -355,19 +374,15 @@ public final class CentralBankPlacer {
 		return 100 - (maxY - minY) * 10;
 	}
 
-	/** MB ana yapisi (zemin + giris) yerinde mi? */
+	/** MB ana yapisi (zemin + duvar + cati) yerinde mi? */
 	public static boolean isCentralBankStructureIntact(ServerLevel level, BlockPos origin) {
 		if (origin == null) {
 			return false;
 		}
-		BlockState floor = Blocks.POLISHED_ANDESITE.defaultBlockState();
-		BlockState trim = Blocks.GOLD_BLOCK.defaultBlockState();
-		if (!level.getBlockState(origin.offset(9, 0, 5)).is(Blocks.POLISHED_ANDESITE)
-				&& !level.getBlockState(origin.offset(9, 0, 5)).is(Blocks.GOLD_BLOCK)) {
-			return false;
-		}
-		return level.getBlockState(origin).is(Blocks.STONE_BRICKS)
-				|| level.getBlockState(origin.offset(BANK_WIDTH - 1, 1, 0)).is(Blocks.STONE_BRICKS);
+		return level.getBlockState(origin.offset(9, 0, 5)).is(Blocks.GOLD_BLOCK)
+				&& level.getBlockState(origin.offset(0, 1, 0)).is(Blocks.STONE_BRICKS)
+				&& level.getBlockState(origin.offset(9, 5, 5)).is(Blocks.DARK_PRISMARINE)
+				&& level.getBlockState(origin.offset(9, -1, 5)).is(Blocks.POLISHED_DEEPSLATE);
 	}
 
 	private static void buildAt(ServerLevel level, BlockPos origin) {
@@ -379,10 +394,7 @@ public final class CentralBankPlacer {
 		BlockPos vaultCenter = origin.offset(14, 1, 7);
 		buildGoldReserve(level, vaultCenter);
 		buildFacilityDepots(level, origin);
-		spawnBanker(level, origin.offset(9, 1, 6));
-		spawnMasakOfficer(level, origin.offset(3, 1, 9));
-		spawnExchangeBroker(level, origin.offset(12, 1, 9));
-		spawnBlackMarketDealer(level, origin.offset(15, 1, 2));
+		ensureHubNpcs(level, origin);
 
 		bankOrigin = origin;
 		applyLayoutFromOrigin(origin);
@@ -731,6 +743,32 @@ public final class CentralBankPlacer {
 				1));
 		villager.addTag(BLACK_MARKET_NPC_TAG);
 		level.addFreshEntity(villager);
+	}
+
+	private static void ensureHubNpcs(ServerLevel level, BlockPos origin) {
+		if (!hasNpcAt(level, origin.offset(9, 1, 6), NPC_TAG)) {
+			spawnBanker(level, origin.offset(9, 1, 6));
+		}
+		if (!hasNpcAt(level, origin.offset(3, 1, 9), MASAK_NPC_TAG)) {
+			spawnMasakOfficer(level, origin.offset(3, 1, 9));
+		}
+		if (!hasNpcAt(level, origin.offset(12, 1, 9), EXCHANGE_NPC_TAG)) {
+			spawnExchangeBroker(level, origin.offset(12, 1, 9));
+		}
+		if (!hasNpcAt(level, origin.offset(15, 1, 2), BLACK_MARKET_NPC_TAG)) {
+			spawnBlackMarketDealer(level, origin.offset(15, 1, 2));
+		}
+	}
+
+	private static boolean hasNpcAt(ServerLevel level, BlockPos pos, String tag) {
+		var box = new net.minecraft.world.phys.AABB(pos).inflate(2.0);
+		for (Villager villager : level.getEntities(EntityTypeTest.forClass(Villager.class),
+				v -> v.entityTags().contains(tag) && v.blockPosition().closerThan(pos, 3))) {
+			if (box.contains(villager.position())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void removeExisting(ServerLevel level) {

@@ -3,7 +3,10 @@ package com.mceconomy.command;
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.government.EconomyMinisterService;
 import com.mceconomy.util.Permissions;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
@@ -39,7 +42,20 @@ public final class EkonomiCommand {
 										StringArgumentType.getString(ctx, "oyuncu"), true))))
 						.then(literal("al").then(argument("oyuncu", StringArgumentType.string())
 								.executes(ctx -> grant(ctx.getSource(),
-										StringArgumentType.getString(ctx, "oyuncu"), false))))));
+										StringArgumentType.getString(ctx, "oyuncu"), false))))
+						.then(literal("emir")
+								.then(literal("oner")
+										.then(argument("tip", StringArgumentType.word())
+												.then(argument("json", StringArgumentType.greedyString())
+														.executes(ctx -> proposeEmir(ctx.getSource(),
+																StringArgumentType.getString(ctx, "tip"),
+																StringArgumentType.getString(ctx, "json"))))))
+								.then(literal("oy").then(argument("id", LongArgumentType.longArg(1))
+										.then(literal("evet").executes(ctx -> voteEmir(ctx.getSource(),
+												LongArgumentType.getLong(ctx, "id"), true)))
+										.then(literal("hayir").executes(ctx -> voteEmir(ctx.getSource(),
+												LongArgumentType.getLong(ctx, "id"), false)))))
+								.then(literal("bekleyen").executes(ctx -> listPending(ctx.getSource()))))));
 	}
 
 	private static int appointSelf(CommandSourceStack source) {
@@ -99,6 +115,85 @@ public final class EkonomiCommand {
 			return 1;
 		} catch (Exception e) {
 			source.sendFailure(Component.literal("§cHata."));
+			return 0;
+		}
+	}
+
+	private static int proposeEmir(CommandSourceStack source, String type, String json) {
+		ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			return 0;
+		}
+		EconomyMinisterService svc = McEconomyMod.getEconomyManager().economyMinisterService();
+		if (!svc.isMinister(player.getUUID())) {
+			source.sendFailure(Component.literal("§cYalnizca ekonomi bakani emir onerebilir."));
+			return 0;
+		}
+		JsonObject payload;
+		try {
+			payload = json == null || json.isBlank() ? new JsonObject() : JsonParser.parseString(json).getAsJsonObject();
+		} catch (Exception e) {
+			source.sendFailure(Component.literal("§cJSON gecersiz. Ornek: {\"baseRate\":0.05}"));
+			return 0;
+		}
+		try {
+			String msg = svc.proposeDecree(player.getUUID(), type, payload);
+			source.sendSuccess(() -> Component.literal("§6[Bakanlik] §f" + msg), true);
+			return 1;
+		} catch (Exception e) {
+			source.sendFailure(Component.literal("§cEmir kaydedilemedi."));
+			return 0;
+		}
+	}
+
+	private static int voteEmir(CommandSourceStack source, long decreeId, boolean yes) {
+		ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			return 0;
+		}
+		try {
+			String msg = McEconomyMod.getEconomyManager().economyMinisterService()
+					.voteDecree(player.getUUID(), decreeId, yes);
+			source.sendSuccess(() -> Component.literal("§7" + msg), false);
+			return 1;
+		} catch (Exception e) {
+			source.sendFailure(Component.literal("§cOy kullanilamadi."));
+			return 0;
+		}
+	}
+
+	private static int listPending(CommandSourceStack source) {
+		ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			return 0;
+		}
+		EconomyMinisterService svc = McEconomyMod.getEconomyManager().economyMinisterService();
+		if (!svc.isMinister(player.getUUID()) && !Permissions.isServerOp(source)) {
+			source.sendFailure(Component.literal("§cYetkisiz."));
+			return 0;
+		}
+		try {
+			var pending = svc.pendingDecrees();
+			if (pending.isEmpty()) {
+				source.sendSuccess(() -> Component.literal("§7Bekleyen emir yok."), false);
+				return 1;
+			}
+			source.sendSuccess(() -> Component.literal("§6=== Bekleyen emirler ==="), false);
+			int required = svc.requiredYesVotes();
+			for (var d : pending) {
+				int yesCount = 0;
+				for (var v : svc.votesForDecree(d.id())) {
+					if (v.yes()) {
+						yesCount++;
+					}
+				}
+				final int yesVotes = yesCount;
+				source.sendSuccess(() -> Component.literal(
+						"§e#" + d.id() + " §f" + d.type() + " §7(" + yesVotes + "/" + required + " onay)"), false);
+			}
+			return 1;
+		} catch (Exception e) {
+			source.sendFailure(Component.literal("§cListe alinamadi."));
 			return 0;
 		}
 	}

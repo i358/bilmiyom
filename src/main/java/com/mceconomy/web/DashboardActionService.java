@@ -1,7 +1,9 @@
 package com.mceconomy.web;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mceconomy.McEconomyMod;
+import com.mceconomy.insurance.InsurancePolicy;
 import com.mceconomy.blackmarket.IllegalGood;
 import com.mceconomy.command.BalanceCommand;
 import com.mceconomy.economy.GoldStandard;
@@ -1040,6 +1042,242 @@ public final class DashboardActionService {
 			return ActionResult.ok("Is basvurusu geri cekildi.");
 		}
 		return ActionResult.fail("Bekleyen is basvurunuz yok.");
+	}
+
+	public static ActionResult tradeInvite(UUID uuid, String partnerName) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Takas daveti icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().playerTradeService().invite(player, partnerName)) {
+			return ActionResult.ok("Takas daveti gonderildi: " + partnerName);
+		}
+		return ActionResult.fail("Davet gonderilemedi (oyuncu, aktif takas veya MASAK).");
+	}
+
+	public static ActionResult tradeAccept(UUID uuid) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Takasi kabul etmek icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().playerTradeService().accept(player)) {
+			return ActionResult.ok("Takas kabul edildi.");
+		}
+		return ActionResult.fail("Bekleyen takas daveti yok.");
+	}
+
+	public static ActionResult tradeDispute(UUID uuid, long tradeId, String reason) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Sikayet icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().playerTradeService().dispute(player, tradeId, reason)) {
+			return ActionResult.ok("Takas sikayeti acildi (#" + tradeId + ").");
+		}
+		return ActionResult.fail("Sikayet acilamadi.");
+	}
+
+	public static ActionResult insurancePersonal(UUID uuid, boolean subscribe) {
+		try {
+			var svc = McEconomyMod.getEconomyManager().insuranceService();
+			if (subscribe) {
+				if (svc.subscribePersonal(uuid)) {
+					return ActionResult.ok("Kisisel sigorta poliçesi aktif.");
+				}
+				return ActionResult.fail("Prim odenemedi veya zaten aktif.");
+			}
+			if (svc.cancel(uuid, InsurancePolicy.PolicyType.PERSONAL, 0)) {
+				return ActionResult.ok("Kisisel sigorta iptal edildi.");
+			}
+			return ActionResult.fail("Aktif kisisel poliçe yok.");
+		} catch (Exception e) {
+			return ActionResult.fail("Sigorta islemi basarisiz.");
+		}
+	}
+
+	public static ActionResult insuranceCompany(UUID uuid, String companyName, boolean subscribe) {
+		try {
+			var svc = McEconomyMod.getEconomyManager().insuranceService();
+			if (subscribe) {
+				if (svc.subscribeCompany(uuid, companyName)) {
+					return ActionResult.ok(companyName + " sirket sigortasi aktif.");
+				}
+				return ActionResult.fail("Sirket bulunamadi, sahip degilsiniz veya prim yok.");
+			}
+			var company = McEconomyMod.getEconomyManager().companyManager().find(companyName).orElse(null);
+			if (company == null) {
+				return ActionResult.fail("Sirket bulunamadi.");
+			}
+			if (svc.cancel(uuid, InsurancePolicy.PolicyType.COMPANY, company.id())) {
+				return ActionResult.ok("Sirket sigortasi iptal edildi.");
+			}
+			return ActionResult.fail("Aktif sirket poliçesi yok.");
+		} catch (Exception e) {
+			return ActionResult.fail("Sigorta islemi basarisiz.");
+		}
+	}
+
+	public static ActionResult guildCreate(UUID uuid, String name) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Lonca kurmak icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().create(player, name)) {
+			return ActionResult.ok("Lonca kuruldu: " + name);
+		}
+		return ActionResult.fail("Lonca kurulamadi.");
+	}
+
+	public static ActionResult guildJoin(UUID uuid, String name) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Katilmak icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().join(player, name)) {
+			return ActionResult.ok("Loncaya katildiniz: " + name);
+		}
+		return ActionResult.fail("Katilim basarisiz.");
+	}
+
+	public static ActionResult guildLeave(UUID uuid) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Ayrilmak icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().leave(player)) {
+			return ActionResult.ok("Loncadan ayrildiniz.");
+		}
+		return ActionResult.fail("Loncada degilsiniz veya lidersiniz.");
+	}
+
+	public static ActionResult guildDeposit(UUID uuid, long displayMc) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Yatirma icin oyunda olmalisiniz.");
+		}
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Gecersiz tutar.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().deposit(player, mg)) {
+			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " lonca kasasina yatirildi.");
+		}
+		return ActionResult.fail("Yatirma basarisiz.");
+	}
+
+	public static ActionResult guildWithdraw(UUID uuid, long displayMc) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Cekim icin oyunda olmalisiniz.");
+		}
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Gecersiz tutar.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().withdraw(player, mg)) {
+			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " lonca kasasindan cekildi.");
+		}
+		return ActionResult.fail("Cekim basarisiz (lider veya kasa).");
+	}
+
+	public static ActionResult guildStrike(UUID uuid, int minutes) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Grev icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().startStrike(player, minutes)) {
+			return ActionResult.ok("Grev baslatildi (" + minutes + " dk).");
+		}
+		return ActionResult.fail("Grev baslatilamadi (lider degilsiniz).");
+	}
+
+	public static ActionResult guildBargain(UUID uuid, String message) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Mesaj icin oyunda olmalisiniz.");
+		}
+		if (McEconomyMod.getEconomyManager().guildService().setBargain(player, message)) {
+			return ActionResult.ok("Pazarlik mesaji iletildi.");
+		}
+		return ActionResult.fail("Mesaj gonderilemedi.");
+	}
+
+	public static ActionResult municipalCandidate(UUID uuid) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Adaylik icin oyunda olmalisiniz.");
+		}
+		try {
+			if (McEconomyMod.getEconomyManager().mayorService()
+					.registerCandidate(player.getUUID(), player.getName().getString())) {
+				return ActionResult.ok("Secime aday oldunuz.");
+			}
+		} catch (Exception e) {
+			return ActionResult.fail("Adaylik kaydi basarisiz.");
+		}
+		return ActionResult.fail("Aday olunamadi.");
+	}
+
+	public static ActionResult municipalVote(UUID uuid, String candidate) {
+		try {
+			if (McEconomyMod.getEconomyManager().mayorService().vote(uuid, candidate)) {
+				return ActionResult.ok("Oy kullanildi: " + candidate);
+			}
+		} catch (Exception e) {
+			return ActionResult.fail("Oy kaydedilemedi.");
+		}
+		return ActionResult.fail("Gecersiz aday veya zaten oy kullandiniz.");
+	}
+
+	public static ActionResult municipalSpend(UUID uuid, long displayMc, String purpose) {
+		ServerPlayer player = onlinePlayer(uuid);
+		if (player == null) {
+			return ActionResult.fail("Harcama icin oyunda olmalisiniz.");
+		}
+		long mg = mgForDisplayMc(displayMc);
+		if (mg <= 0) {
+			return ActionResult.fail("Gecersiz tutar.");
+		}
+		try {
+			if (McEconomyMod.getEconomyManager().mayorService().spendBudget(uuid, mg, purpose)) {
+				return ActionResult.ok("Belediye harcamasi yapildi.");
+			}
+		} catch (Exception e) {
+			return ActionResult.fail("Harcama basarisiz.");
+		}
+		return ActionResult.fail("Baskan degilsiniz veya butce yetersiz.");
+	}
+
+	public static ActionResult proposeDecree(UUID uuid, String type, String payloadJson) {
+		var svc = McEconomyMod.getEconomyManager().economyMinisterService();
+		if (!svc.isMinister(uuid)) {
+			return ActionResult.fail("Yalnizca ekonomi bakani emir onerebilir.");
+		}
+		JsonObject payload;
+		try {
+			payload = payloadJson == null || payloadJson.isBlank()
+					? new JsonObject() : JsonParser.parseString(payloadJson).getAsJsonObject();
+		} catch (Exception e) {
+			return ActionResult.fail("JSON gecersiz.");
+		}
+		try {
+			String msg = svc.proposeDecree(uuid, type, payload);
+			return ActionResult.ok(msg);
+		} catch (Exception e) {
+			return ActionResult.fail("Emir kaydedilemedi.");
+		}
+	}
+
+	public static ActionResult voteDecree(UUID uuid, long decreeId, boolean yes) {
+		var svc = McEconomyMod.getEconomyManager().economyMinisterService();
+		if (!svc.isMinister(uuid)) {
+			return ActionResult.fail("Yalnizca ekonomi bakani oy kullanabilir.");
+		}
+		try {
+			return ActionResult.ok(svc.voteDecree(uuid, decreeId, yes));
+		} catch (Exception e) {
+			return ActionResult.fail("Oy kullanilamadi.");
+		}
 	}
 
 	public static ActionResult tradeDisputeResolve(String adminName, long disputeId, boolean refund, String note) {

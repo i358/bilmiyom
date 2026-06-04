@@ -53,6 +53,7 @@ public final class EconomyDatabaseReset {
 			"player_vehicles",
 			"company_buildings",
 			"economy_minister_applications",
+			"economy_decree_votes",
 			"economy_decrees",
 	};
 

@@ -26,7 +26,10 @@ public final class EconomyMinisterService {
 	public record Application(long id, UUID applicantUuid, String applicantName, String reason, String status) {
 	}
 
-	public record Decree(long id, String type, String payloadJson, String status, long createdAt) {
+	public record Decree(long id, String type, String payloadJson, String status, long createdAt, String issuedBy) {
+	}
+
+	public record DecreeVoteRow(UUID ministerUuid, boolean yes, long votedAt) {
 	}
 
 	private final Connection connection;
@@ -56,7 +59,8 @@ public final class EconomyMinisterService {
 	public void appoint(ServerPlayer target, boolean value) throws SQLException {
 		PlayerEconomyProfile p = profiles.get(target.getUUID());
 		if (p == null) {
-			return;
+			p = playerRepository.createIfAbsent(target.getUUID(), target.getName().getString());
+			profiles.put(target.getUUID(), p);
 		}
 		p.setEconomyMinister(value);
 		playerRepository.save(p);
@@ -125,29 +129,213 @@ public final class EconomyMinisterService {
 		return "Reddedildi.";
 	}
 
-	public String issueDecree(UUID ministerUuid, String type, JsonObject payload) throws SQLException {
+	/** Kabine onayi icin emir teklifi (hemen uygulanmaz). */
+	public String proposeDecree(UUID ministerUuid, String type, JsonObject payload) throws SQLException {
 		if (!isMinister(ministerUuid)) {
-			return "Yalnizca ekonomi bakani emir verebilir.";
+			return "Yalnizca ekonomi bakani emir onerebilir.";
 		}
+		String validation = validateDecreePayload(type, payload);
+		if (validation != null) {
+			return validation;
+		}
+		long decreeId;
+		long now = System.currentTimeMillis();
+		try (PreparedStatement ps = connection.prepareStatement("""
+				INSERT INTO economy_decrees(type, payload_json, status, created_at, issued_by)
+				VALUES(?, ?, 'PENDING', ?, ?)
+				""", Statement.RETURN_GENERATED_KEYS)) {
+			ps.setString(1, type);
+			ps.setString(2, payload != null ? payload.toString() : "{}");
+			ps.setLong(3, now);
+			ps.setString(4, ministerUuid.toString());
+			ps.executeUpdate();
+			try (ResultSet keys = ps.getGeneratedKeys()) {
+				if (!keys.next()) {
+					return "Emir kaydedilemedi.";
+				}
+				decreeId = keys.getLong(1);
+			}
+		}
+		recordVote(decreeId, ministerUuid, true);
+		notifyMinistersPending(decreeId, type, ministerUuid);
+		return tryRatify(decreeId);
+	}
+
+	public String voteDecree(UUID ministerUuid, long decreeId, boolean yes) throws SQLException {
+		if (!isMinister(ministerUuid)) {
+			return "Yalnizca ekonomi bakani oy kullanabilir.";
+		}
+		Decree decree = findDecree(decreeId);
+		if (decree == null) {
+			return "Emir bulunamadi.";
+		}
+		if (!"PENDING".equals(decree.status())) {
+			return "Emir artik oylanmiyor (" + decree.status() + ").";
+		}
+		recordVote(decreeId, ministerUuid, yes);
+		return tryRatify(decreeId);
+	}
+
+	public List<Decree> pendingDecrees() throws SQLException {
+		List<Decree> list = new ArrayList<>();
+		try (PreparedStatement ps = connection.prepareStatement(
+				"SELECT * FROM economy_decrees WHERE status = 'PENDING' ORDER BY created_at");
+			 ResultSet rs = ps.executeQuery()) {
+			while (rs.next()) {
+				list.add(mapDecree(rs));
+			}
+		}
+		return list;
+	}
+
+	public List<DecreeVoteRow> votesForDecree(long decreeId) throws SQLException {
+		List<DecreeVoteRow> list = new ArrayList<>();
+		try (PreparedStatement ps = connection.prepareStatement(
+				"SELECT minister_uuid, vote, voted_at FROM economy_decree_votes WHERE decree_id = ?")) {
+			ps.setLong(1, decreeId);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					list.add(new DecreeVoteRow(
+							UUID.fromString(rs.getString("minister_uuid")),
+							"YES".equalsIgnoreCase(rs.getString("vote")),
+							rs.getLong("voted_at")));
+				}
+			}
+		}
+		return list;
+	}
+
+	public int requiredYesVotes() {
+		int ministers = Math.max(1, ministerCount());
+		return (int) Math.ceil(ministers * EconomyConfig.decreeVoteApprovalRatio());
+	}
+
+	private void recordVote(long decreeId, UUID ministerUuid, boolean yes) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement("""
+				INSERT INTO economy_decree_votes(decree_id, minister_uuid, vote, voted_at)
+				VALUES(?, ?, ?, ?)
+				ON CONFLICT(decree_id, minister_uuid) DO UPDATE SET vote = excluded.vote, voted_at = excluded.voted_at
+				""")) {
+			ps.setLong(1, decreeId);
+			ps.setString(2, ministerUuid.toString());
+			ps.setString(3, yes ? "YES" : "NO");
+			ps.setLong(4, System.currentTimeMillis());
+			ps.executeUpdate();
+		}
+	}
+
+	private String tryRatify(long decreeId) throws SQLException {
+		Decree decree = findDecree(decreeId);
+		if (decree == null || !"PENDING".equals(decree.status())) {
+			return "Emir durumu guncel degil.";
+		}
+		int yes = 0;
+		int no = 0;
+		for (DecreeVoteRow v : votesForDecree(decreeId)) {
+			if (v.yes()) {
+				yes++;
+			} else {
+				no++;
+			}
+		}
+		int required = requiredYesVotes();
+		int ministers = Math.max(1, ministerCount());
+		if (yes >= required) {
+			String result = executeDecree(decree);
+			updateDecreeStatus(decreeId, "ACTIVE");
+			broadcastRatified(decree, result);
+			return "Emir yururluge girdi: " + result;
+		}
+		if (no > ministers - required) {
+			updateDecreeStatus(decreeId, "REJECTED");
+			return "Emir reddedildi (yeterli ret oyu).";
+		}
+		if (yes + no >= ministers) {
+			updateDecreeStatus(decreeId, "REJECTED");
+			return "Emir reddedildi (onay yetersiz: " + yes + "/" + required + ").";
+		}
+		return "Oy kaydedildi. Onay: " + yes + "/" + required + " (bekleyen emir #" + decreeId + ").";
+	}
+
+	private void updateDecreeStatus(long decreeId, String status) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement(
+				"UPDATE economy_decrees SET status = ? WHERE id = ?")) {
+			ps.setString(1, status);
+			ps.setLong(2, decreeId);
+			ps.executeUpdate();
+		}
+	}
+
+	private Decree findDecree(long id) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM economy_decrees WHERE id = ?")) {
+			ps.setLong(1, id);
+			try (ResultSet rs = ps.executeQuery()) {
+				return rs.next() ? mapDecree(rs) : null;
+			}
+		}
+	}
+
+	private static Decree mapDecree(ResultSet rs) throws SQLException {
+		return new Decree(rs.getLong("id"), rs.getString("type"),
+				rs.getString("payload_json"), rs.getString("status"),
+				rs.getLong("created_at"), rs.getString("issued_by"));
+	}
+
+	private static String validateDecreePayload(String type, JsonObject payload) {
+		return switch (type == null ? "" : type) {
+			case "interest" -> payload != null && payload.has("baseRate") ? null : "baseRate gerekli.";
+			case "tax" -> payload != null && (payload.has("incomeTaxRate") || payload.has("cityTaxRate"))
+					? null : "incomeTaxRate veya cityTaxRate gerekli.";
+			case "bulletin" -> payload != null && payload.has("message") ? null : "message gerekli.";
+			case "market_multiplier" -> payload != null && payload.has("multiplier") ? null : "multiplier gerekli.";
+			default -> "Bilinmeyen emir: " + type;
+		};
+	}
+
+	private String executeDecree(Decree decree) {
+		JsonObject payload = com.google.gson.JsonParser.parseString(
+				decree.payloadJson() != null ? decree.payloadJson() : "{}").getAsJsonObject();
 		EconomyManager manager = McEconomyMod.getEconomyManager();
-		String result = switch (type == null ? "" : type) {
+		return switch (decree.type()) {
 			case "interest" -> applyInterestDecree(manager, payload);
 			case "tax" -> applyTaxDecree(payload);
 			case "bulletin" -> applyBulletin(manager, payload);
 			case "market_multiplier" -> applyMarketMultiplier(manager, payload);
-			default -> "Bilinmeyen emir: " + type;
+			default -> "Bilinmeyen emir: " + decree.type();
 		};
-		try (PreparedStatement ps = connection.prepareStatement("""
-				INSERT INTO economy_decrees(type, payload_json, status, created_at, issued_by)
-				VALUES(?, ?, 'ACTIVE', ?, ?)
-				""")) {
-			ps.setString(1, type);
-			ps.setString(2, payload != null ? payload.toString() : "{}");
-			ps.setLong(3, System.currentTimeMillis());
-			ps.setString(4, ministerUuid.toString());
-			ps.executeUpdate();
+	}
+
+	private void notifyMinistersPending(long decreeId, String type, UUID proposer) {
+		var server = McEconomyMod.getEconomyManager().server();
+		if (server == null) {
+			return;
 		}
-		return result;
+		for (PlayerEconomyProfile p : profiles.values()) {
+			if (!p.economyMinister() || p.uuid().equals(proposer)) {
+				continue;
+			}
+			ServerPlayer mp = server.getPlayerList().getPlayer(p.uuid());
+			if (mp != null) {
+				mp.sendSystemMessage(Component.literal(
+						"§6[Bakanlik] §eYeni emir teklifi #" + decreeId + " (" + type + ") — /ekonomi bakan emir oy "
+								+ decreeId + " evet|hayir"));
+			}
+		}
+	}
+
+	private void broadcastRatified(Decree decree, String result) {
+		var server = McEconomyMod.getEconomyManager().server();
+		if (server == null) {
+			return;
+		}
+		server.getPlayerList().broadcastSystemMessage(
+				Component.literal("§6[Ekonomi Bakani] §fEmir #" + decree.id() + " (" + decree.type() + "): " + result),
+				false);
+	}
+
+	/** Geriye uyumluluk: aninda teklif + oylama akisi. */
+	public String issueDecree(UUID ministerUuid, String type, JsonObject payload) throws SQLException {
+		return proposeDecree(ministerUuid, type, payload);
 	}
 
 	private static String applyInterestDecree(EconomyManager manager, JsonObject payload) {
@@ -207,8 +395,7 @@ public final class EconomyMinisterService {
 			ps.setInt(1, limit);
 			try (ResultSet rs = ps.executeQuery()) {
 				while (rs.next()) {
-					list.add(new Decree(rs.getLong("id"), rs.getString("type"),
-							rs.getString("payload_json"), rs.getString("status"), rs.getLong("created_at")));
+					list.add(mapDecree(rs));
 				}
 			}
 		}

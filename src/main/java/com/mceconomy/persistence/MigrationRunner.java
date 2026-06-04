@@ -121,6 +121,25 @@ public final class MigrationRunner {
 			migrateV24();
 			setVersion(24);
 		}
+		if (current < 25) {
+			migrateV25();
+			setVersion(25);
+		}
+	}
+
+	private void migrateV25() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V25: ekonomi emir oylamalari...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS economy_decree_votes (
+						decree_id INTEGER NOT NULL,
+						minister_uuid TEXT NOT NULL,
+						vote TEXT NOT NULL,
+						voted_at INTEGER NOT NULL,
+						PRIMARY KEY(decree_id, minister_uuid)
+					)
+					""");
+		}
 	}
 
 	private void migrateV24() throws SQLException {

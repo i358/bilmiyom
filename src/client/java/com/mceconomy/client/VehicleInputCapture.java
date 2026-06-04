@@ -14,7 +14,11 @@ public final class VehicleInputCapture {
 	public static void register() {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			LocalPlayer player = client.player;
-			if (player == null || !(player.getVehicle() instanceof Boat)) {
+			if (player == null || !(player.getVehicle() instanceof Boat boat)
+					|| !VehicleHudOverlay.isMcVehicle(boat)) {
+				if (player != null) {
+					VehicleHudState.clear();
+				}
 				return;
 			}
 			var opts = client.options;
@@ -24,6 +28,9 @@ public final class VehicleInputCapture {
 			boolean right = opts.keyRight.isDown();
 			boolean brake = opts.keyJump.isDown();
 			boolean handbrake = opts.keyShift.isDown();
+			String modelLabel = boat.hasCustomName()
+					? boat.getCustomName().getString().replaceAll("§[0-9a-fk-or]", "") : "arac";
+			VehicleHudState.update(VehicleHudState.speed(), VehicleHudState.fuel(), modelLabel);
 			ClientPlayNetworking.send(new VehicleInputPayload(forward, backward, left, right, brake, handbrake));
 		});
 	}

@@ -2,6 +2,8 @@ package com.mceconomy;
 
 import com.mceconomy.client.EconomyHudOverlay;
 import com.mceconomy.client.EconomyHudState;
+import com.mceconomy.client.VehicleHudOverlay;
+import com.mceconomy.client.VehicleHudState;
 import com.mceconomy.client.VehicleInputCapture;
 import com.mceconomy.network.EconomyHudPayload;
 import com.mceconomy.network.VehicleInputPayload;
@@ -37,6 +39,10 @@ public class McEconomyClientMod implements ClientModInitializer {
 			PayloadTypeRegistry.serverboundPlay().register(VehicleInputPayload.TYPE, VehicleInputPayload.STREAM_CODEC);
 			PayloadTypeRegistry.clientboundPlay().register(VehicleStatePayload.TYPE, VehicleStatePayload.STREAM_CODEC);
 			VehicleInputCapture.register();
+			ClientPlayNetworking.registerGlobalReceiver(VehicleStatePayload.TYPE, (payload, context) ->
+					context.client().execute(() -> VehicleHudState.update(
+							payload.speed(), payload.fuel(), "")));
+			VehicleHudOverlay.register();
 		} catch (Throwable t) {
 			McEconomyMod.LOGGER.warn("Arac payload: {}", t.getMessage());
 		}

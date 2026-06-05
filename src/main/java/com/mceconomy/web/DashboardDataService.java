@@ -18,7 +18,6 @@ import com.mceconomy.justice.CitizenReport;
 import com.mceconomy.justice.PrisonSentence;
 import com.mceconomy.market.Commodity;
 import com.mceconomy.market.CommodityState;
-import com.mceconomy.market.MarketCatalogService;
 import com.mceconomy.market.MarketItemEntry;
 import com.mceconomy.market.MarketItemState;
 import com.mceconomy.market.MarketService;
@@ -28,8 +27,6 @@ import com.mceconomy.regulation.MasakAlert;
 import com.mceconomy.util.Permissions;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -628,10 +625,8 @@ public final class DashboardDataService {
 
 		JsonArray marketTopItems = new JsonArray();
 		var catalog = market.catalog();
-		Map<String, Long> mobilityBps = loadItemMobilityBps(48);
-		List<MarketItemEntry> byMobility = chartEntriesByMobility(market, catalog, null, mobilityBps);
 		int topCount = 0;
-		for (MarketItemEntry entry : byMobility) {
+		for (MarketItemEntry entry : catalog.allSorted()) {
 			if (!entry.sellable() && !entry.buyable()) {
 				continue;
 			}
@@ -661,7 +656,7 @@ public final class DashboardDataService {
 
 		JsonArray topItemHistories = new JsonArray();
 		int count = 0;
-		for (MarketItemEntry entry : byMobility) {
+		for (MarketItemEntry entry : catalog.allSorted()) {
 			if (!entry.sellable() || count >= 5) {
 				continue;
 			}
@@ -692,18 +687,13 @@ public final class DashboardDataService {
 	public static JsonObject buildChartsItems(int page, String search) {
 		var market = McEconomyMod.getEconomyManager().marketService();
 		var catalog = market.catalog();
-		Map<String, Long> mobilityBps = loadItemMobilityBps(48);
-		List<MarketItemEntry> sorted = chartEntriesByMobility(market, catalog, search, mobilityBps);
 		JsonObject data = new JsonObject();
 		data.addProperty("page", page);
-		data.addProperty("pageCount", chartItemsPageCount(sorted.size(), CHART_ITEMS_PAGE_SIZE));
+		data.addProperty("pageCount", catalog.pageCount(CHART_ITEMS_PAGE_SIZE, search, null));
 		data.addProperty("pageSize", CHART_ITEMS_PAGE_SIZE);
-		data.addProperty("totalItems", sorted.size());
+		data.addProperty("totalItems", catalog.allSorted().size());
 		JsonArray items = new JsonArray();
-		int from = Math.max(0, page * CHART_ITEMS_PAGE_SIZE);
-		int to = Math.min(sorted.size(), from + CHART_ITEMS_PAGE_SIZE);
-		for (int i = from; i < to; i++) {
-			MarketItemEntry entry = sorted.get(i);
+		for (MarketItemEntry entry : catalog.page(page, CHART_ITEMS_PAGE_SIZE, search, null)) {
 			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
 			items.add(marketItemRow(market, entry, priceMg, 48));
 		}
@@ -1247,43 +1237,6 @@ public final class DashboardDataService {
 			}
 		}
 		return history;
-	}
-
-	private static Map<String, Long> loadItemMobilityBps(int windowSize) {
-		try {
-			return McEconomyMod.getEconomyManager().priceHistoryRepository().loadItemChangeBps(windowSize);
-		} catch (Exception e) {
-			McEconomyMod.LOGGER.error("Item hareketlilik verisi yuklenemedi", e);
-			return Map.of();
-		}
-	}
-
-	private static double itemFlowScore(MarketService market, MarketItemEntry entry) {
-		MarketItemState state = market.priceEngine().stateFor(entry.itemId());
-		return state != null ? state.supplyIndex() + state.demandIndex() : 0;
-	}
-
-	private static List<MarketItemEntry> chartEntriesByMobility(MarketService market, MarketCatalogService catalog,
-			String search, Map<String, Long> mobilityBps) {
-		String q = search == null ? "" : search.toLowerCase().trim();
-		List<MarketItemEntry> filtered = new ArrayList<>();
-		for (MarketItemEntry entry : catalog.allSorted()) {
-			if (!q.isEmpty()
-					&& !entry.displayName().toLowerCase().contains(q)
-					&& !entry.itemId().toLowerCase().contains(q)) {
-				continue;
-			}
-			filtered.add(entry);
-		}
-		filtered.sort(Comparator
-				.<MarketItemEntry>comparingLong(e -> mobilityBps.getOrDefault(e.itemId(), 0L)).reversed()
-				.thenComparingDouble(e -> itemFlowScore(market, e)).reversed()
-				.thenComparing(MarketItemEntry::displayName, String.CASE_INSENSITIVE_ORDER));
-		return filtered;
-	}
-
-	private static int chartItemsPageCount(int totalItems, int pageSize) {
-		return Math.max(1, (totalItems + pageSize - 1) / pageSize);
 	}
 
 	public static JsonObject marketItemRow(MarketService market, MarketItemEntry entry, long priceMg, int historyLimit) {

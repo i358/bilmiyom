@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,41 @@ public final class PriceHistoryRepository {
 			}
 		}
 		return rows;
+	}
+
+	/** ITEM sembolleri icin son {@code windowSize} kayittaki mutlak fiyat degisimi (bps). */
+	public Map<String, Long> loadItemChangeBps(int windowSize) throws SQLException {
+		Map<String, Long> result = new HashMap<>();
+		try (PreparedStatement ps = connection.prepareStatement("""
+				WITH recent AS (
+					SELECT symbol, price_mg, recorded_at,
+						ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY recorded_at DESC) AS rn
+					FROM price_history
+					WHERE symbol_type = 'ITEM'
+				),
+				windowed AS (
+					SELECT symbol, price_mg, recorded_at FROM recent WHERE rn <= ?
+				)
+				SELECT w.symbol,
+					(SELECT price_mg FROM windowed o
+					 WHERE o.symbol = w.symbol ORDER BY recorded_at ASC LIMIT 1) AS oldest_price,
+					(SELECT price_mg FROM windowed n
+					 WHERE n.symbol = w.symbol ORDER BY recorded_at DESC LIMIT 1) AS newest_price
+				FROM (SELECT DISTINCT symbol FROM windowed) w
+				""")) {
+			ps.setInt(1, windowSize);
+			try (ResultSet rs = ps.executeQuery()) {
+				while (rs.next()) {
+					long oldest = rs.getLong("oldest_price");
+					long newest = rs.getLong("newest_price");
+					if (oldest > 0) {
+						result.put(rs.getString("symbol"),
+								Math.abs(Math.round((newest - oldest) * 10000.0 / oldest)));
+					}
+				}
+			}
+		}
+		return result;
 	}
 
 	public void pruneOlderThan(long cutoffMs) throws SQLException {

@@ -4,6 +4,9 @@ let catalog = null;
 let overview = null;
 let portfolioLive = null;
 let chartLiveTimer = null;
+let itemChartsPage = 0;
+let itemChartsSearch = '';
+let itemChartsData = null;
 
 function show(id) {
   document.getElementById('loginView').classList.toggle('hidden', id !== 'login');
@@ -207,7 +210,6 @@ function populateSelects() {
   const sellable = commodities.filter(c => c.sellable !== false);
   fillSelect('marketBuySelect', buyable, 'id', marketCommodityLabel);
   fillSelect('marketSellSelect', sellable, 'id', marketCommodityLabel);
-  fillSelect('chartSymbol', sellable.length ? sellable : commodities, 'id', c => c.name);
   fillSelect('jobSelect', catalog?.jobs || [], 'id', j => j.name);
   const ownedTokens = me.tokens || [];
   fillSelect('tokenTradeSelect',
@@ -310,7 +312,7 @@ function renderTermBalanceChart(history, currentMg) {
 
 async function renderCharts() {
   renderPortfolioChart();
-  renderMarketBar(catalog?.commodities || me.market || []);
+  renderMarketBar(overview?.marketTopItems || catalog?.commodities || me.market || []);
   renderTermBalanceChart(overview?.termHistory || [], overview?.termBalanceMg || me.termBalanceMg || 0);
   renderIndexChart(overview?.indexHistory || []);
   renderMacroCharts();
@@ -318,8 +320,7 @@ async function renderCharts() {
   renderTokenBar(catalog?.tokens || overview?.tokens || []);
   renderAssetBar();
   await loadPortfolioLive();
-  const symbol = document.getElementById('chartSymbol')?.value || 'bugday';
-  loadPriceChart(symbol);
+  await loadItemCharts(itemChartsPage, itemChartsSearch);
   const tokenSel = document.getElementById('tokenChartSelect');
   if (tokenSel && tokenSel.options.length) loadTokenChart(tokenSel.value);
   const shareSel = document.getElementById('shareChartSelect');
@@ -411,8 +412,7 @@ function startChartLiveRefresh() {
     try {
       if (!document.getElementById('page-charts')?.classList.contains('active')) return;
       await loadPortfolioLive();
-      const sym = document.getElementById('chartSymbol')?.value;
-      if (sym) loadPriceChart(sym);
+      await loadItemCharts(itemChartsPage, itemChartsSearch);
       const tok = document.getElementById('tokenChartSelect')?.value;
       if (tok) loadTokenChart(tok);
       const shr = document.getElementById('shareChartSelect')?.value;
@@ -480,8 +480,8 @@ function renderPortfolioChart() {
   });
 }
 
-function renderMarketBar(commodities) {
-  const top = commodities.slice(0, 8);
+function renderMarketBar(items) {
+  const top = (items || []).slice(0, 8);
   destroyChart('marketBar');
   const el = document.getElementById('marketBarChart');
   if (!el) return;
@@ -497,6 +497,64 @@ function renderMarketBar(commodities) {
       datasets: [{ label: 'Fiyat ($)', data: top.map(c => c.priceMg / 1000), backgroundColor: '#d4a84366' }]
     },
     options: chartOptions()
+  });
+}
+
+async function loadItemCharts(page = 0, search = '') {
+  const box = document.getElementById('itemChartsGrid');
+  const meta = document.getElementById('itemChartsMeta');
+  if (!box) return;
+  const q = search ? `&search=${encodeURIComponent(search)}` : '';
+  itemChartsData = await api(`/charts/items?page=${page}${q}`);
+  itemChartsPage = itemChartsData?.page ?? page;
+  const items = itemChartsData?.items || [];
+  const pageCount = itemChartsData?.pageCount ?? 1;
+  const total = itemChartsData?.totalItems ?? items.length;
+  if (meta) {
+    const term = search ? ` · "${search}"` : '';
+    meta.textContent = `Sayfa ${itemChartsPage + 1}/${pageCount} · ${total} item${term}`;
+  }
+  const prev = document.getElementById('itemChartsPrev');
+  const next = document.getElementById('itemChartsNext');
+  if (prev) prev.disabled = itemChartsPage <= 0;
+  if (next) next.disabled = itemChartsPage >= pageCount - 1;
+  if (!items.length) {
+    box.innerHTML = '<p class="hint">Eşleşen item bulunamadı.</p>';
+    return;
+  }
+  box.innerHTML = items.map((item, i) => {
+    const chg = formatChangeBps(item.changeBps);
+    return `<div class="portfolio-live-card">
+      <div class="portfolio-live-meta">
+        <div><strong>${item.name}</strong></div>
+        <div>${chg}</div>
+      </div>
+      <div class="hint" style="margin-bottom:6px">${formatMg(item.priceMg)} · ${item.itemId || item.id}${item.tier ? ' · ' + item.tier : ''}</div>
+      <canvas id="itemChart-${i}"></canvas>
+    </div>`;
+  }).join('');
+  items.forEach((item, i) => {
+    const el = document.getElementById('itemChart-' + i);
+    if (!el) return;
+    const key = 'item-' + (item.itemId || item.id);
+    const chart = historyToChart(item.history, 1000, item.priceMg);
+    destroyChart(key);
+    charts[key] = new Chart(el, {
+      type: 'line',
+      data: {
+        labels: chart.labels,
+        datasets: [{
+          label: item.name,
+          data: chart.values,
+          borderColor: '#d4a843',
+          backgroundColor: '#d4a84322',
+          tension: 0.25,
+          fill: true,
+          pointRadius: 0
+        }]
+      },
+      options: { ...chartOptions(), plugins: { legend: { display: false } } }
+    });
   });
 }
 
@@ -724,18 +782,6 @@ function renderIndexChart(history) {
   const live = (overview?.economyIndex || me.economyIndex || 0) * 1000;
   const bps = overview?.economyIndexChangeBps ?? changeBpsFromHistory(history, live);
   renderLineChart('indexChart', 'index', chart.labels, chart.values, 'Endeks', '#4da6ff', bps);
-}
-
-async function loadPriceChart(symbol) {
-  const data = await api('/prices?symbol=' + encodeURIComponent(symbol) + '&type=COMMODITY');
-  const commodities = catalog?.commodities || overview?.commodities || me.market || [];
-  const row = commodities.find(c => c.id === symbol);
-  const live = data.priceMg || row?.priceMg || 0;
-  const chart = historyToChart(data.history, 1000, live);
-  const bps = data.changeBps ?? row?.changeBps ?? changeBpsFromHistory(data.history, live);
-  const sub = formatSupplyDemand(data.supplySharePct != null ? data : row);
-  const label = row?.name || symbol;
-  renderLineChart('priceChart', 'price', chart.labels, chart.values, label, '#d4a843', bps, sub);
 }
 
 async function loadTokenChart(symbol) {
@@ -1157,7 +1203,25 @@ document.getElementById('loginBtn').onclick = async () => {
 
 document.getElementById('logoutBtn').onclick = logout;
 document.getElementById('refreshBtn').onclick = refresh;
-document.getElementById('chartSymbol')?.addEventListener('change', e => loadPriceChart(e.target.value));
+document.getElementById('itemChartSearchBtn')?.addEventListener('click', () => {
+  itemChartsSearch = document.getElementById('itemChartSearch')?.value?.trim() || '';
+  itemChartsPage = 0;
+  loadItemCharts(itemChartsPage, itemChartsSearch);
+});
+document.getElementById('itemChartSearch')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    itemChartsSearch = e.target.value?.trim() || '';
+    itemChartsPage = 0;
+    loadItemCharts(itemChartsPage, itemChartsSearch);
+  }
+});
+document.getElementById('itemChartsPrev')?.addEventListener('click', () => {
+  if (itemChartsPage > 0) loadItemCharts(itemChartsPage - 1, itemChartsSearch);
+});
+document.getElementById('itemChartsNext')?.addEventListener('click', () => {
+  const max = itemChartsData?.pageCount ?? 1;
+  if (itemChartsPage < max - 1) loadItemCharts(itemChartsPage + 1, itemChartsSearch);
+});
 document.getElementById('tokenChartSelect')?.addEventListener('change', e => loadTokenChart(e.target.value));
 document.getElementById('shareChartSelect')?.addEventListener('change', e => loadShareChart(e.target.value));
 document.getElementById('levChartSelect')?.addEventListener('change', e => {
@@ -1625,7 +1689,7 @@ document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {
     else if (page === 'employees') loadEmployees();
     else if (page === 'company') loadCompanyStash();
     else if (page === 'docs') renderDocs();
-    else if (page === 'charts') { loadPortfolioLive(); startChartLiveRefresh(); }
+    else if (page === 'charts') { loadPortfolioLive(); loadItemCharts(itemChartsPage, itemChartsSearch); startChartLiveRefresh(); }
     else if (page === 'exchange') { renderLeveragePositions(); }
     else if (page === 'map') { loadWorldMap(); startMapLiveRefresh(); }
     else if (page === 'bulletins') loadBulletinArchive();

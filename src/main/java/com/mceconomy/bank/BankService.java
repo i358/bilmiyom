@@ -1,8 +1,6 @@
 package com.mceconomy.bank;
 
-import com.google.gson.JsonObject;
 import com.mceconomy.McEconomyMod;
-import com.mceconomy.debug.DebugSessionLog;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
 import com.mceconomy.facility.FacilityItemTags;
@@ -72,26 +70,12 @@ public final class BankService {
 
 	public boolean createTermAccount(UUID owner, double baseRate) throws SQLException {
 		if (termAccounts.containsKey(owner)) {
-			// #region agent log
-			JsonObject exists = new JsonObject();
-			exists.addProperty("owner", owner.toString());
-			exists.addProperty("hasChecking", checkingAccounts.containsKey(owner));
-			DebugSessionLog.log("BankService.createTermAccount", "term already exists", "B1", exists);
-			// #endregion
 			return false;
 		}
 		long maturesAt = System.currentTimeMillis() + TERM_LENGTH_MS;
 		BankAccount account = BankAccount.createTerm(owner, baseRate, maturesAt);
 		repository.save(account);
 		termAccounts.put(owner, account);
-		// #region agent log
-		JsonObject created = new JsonObject();
-		created.addProperty("owner", owner.toString());
-		created.addProperty("hasChecking", checkingAccounts.containsKey(owner));
-		created.addProperty("termBalance", account.balance());
-		created.addProperty("interestRate", baseRate);
-		DebugSessionLog.log("BankService.createTermAccount", "term created", "B1-B2", created);
-		// #endregion
 		return true;
 	}
 
@@ -105,58 +89,19 @@ public final class BankService {
 
 	public boolean depositToBank(UUID owner, long amount) {
 		BankAccount account = checkingAccounts.get(owner);
-		long walletBefore = currencyService.getBalance(owner);
-		long checkingBefore = account != null ? account.balance() : 0;
-		long termBefore = termAccounts.containsKey(owner) ? termAccounts.get(owner).balance() : 0;
 		if (account == null || amount <= 0) {
-			// #region agent log
-			JsonObject fail = new JsonObject();
-			fail.addProperty("owner", owner.toString());
-			fail.addProperty("amount", amount);
-			fail.addProperty("hasChecking", account != null);
-			fail.addProperty("hasTerm", termAccounts.containsKey(owner));
-			fail.addProperty("walletMg", walletBefore);
-			DebugSessionLog.log("BankService.depositToBank", "precheck failed", "B3", fail);
-			// #endregion
 			return false;
 		}
 		if (currencyService.getBalance(owner) < 0) {
-			// #region agent log
-			JsonObject neg = new JsonObject();
-			neg.addProperty("owner", owner.toString());
-			neg.addProperty("walletMg", walletBefore);
-			DebugSessionLog.log("BankService.depositToBank", "negative wallet blocked", "B3", neg);
-			// #endregion
 			return false;
 		}
 		if (!currencyService.withdraw(owner, amount, TransactionType.WITHDRAW)) {
-			// #region agent log
-			JsonObject insuf = new JsonObject();
-			insuf.addProperty("owner", owner.toString());
-			insuf.addProperty("amount", amount);
-			insuf.addProperty("walletMg", walletBefore);
-			DebugSessionLog.log("BankService.depositToBank", "wallet withdraw failed", "B3", insuf);
-			// #endregion
 			return false;
 		}
 		boolean ok = account.deposit(amount);
 		if (ok) {
 			persistAccount(account);
 		}
-		// #region agent log
-		JsonObject done = new JsonObject();
-		done.addProperty("owner", owner.toString());
-		done.addProperty("amount", amount);
-		done.addProperty("ok", ok);
-		done.addProperty("walletBefore", walletBefore);
-		done.addProperty("walletAfter", currencyService.getBalance(owner));
-		done.addProperty("checkingBefore", checkingBefore);
-		done.addProperty("checkingAfter", account.balance());
-		done.addProperty("termBefore", termBefore);
-		done.addProperty("termAfter", termAccounts.containsKey(owner) ? termAccounts.get(owner).balance() : 0);
-		done.addProperty("target", "CHECKING");
-		DebugSessionLog.log("BankService.depositToBank", "deposit result", "B1-B4-B5", done);
-		// #endregion
 		return ok;
 	}
 

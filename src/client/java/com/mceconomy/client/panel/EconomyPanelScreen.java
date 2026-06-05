@@ -904,7 +904,8 @@ public class EconomyPanelScreen extends Screen {
 		JsonArray infHist = data.has("inflationHistory") ? data.getAsJsonArray("inflationHistory") : new JsonArray();
 		ChartRenderer.renderLine(graphics, font, cx + halfW + 8, y, halfW, 70, infHist, "priceMg", 0xFFFF6B6B, "Enflasyon");
 		y += 78;
-		JsonArray commodities = data.has("commodities") ? data.getAsJsonArray("commodities")
+		JsonArray commodities = data.has("marketTopItems") ? data.getAsJsonArray("marketTopItems")
+				: data.has("commodities") ? data.getAsJsonArray("commodities")
 				: EconomyPanelClientState.marketItems();
 		ChartRenderer.renderBar(graphics, font, cx, y, width - cx - 12, 80, commodities, "name", "priceMg", 0x66D4A843, "Market");
 		y += 88;

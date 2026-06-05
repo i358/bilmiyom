@@ -54,6 +54,7 @@ public final class EconomyWebServer {
 			server.createContext("/api/inventory", this::handleInventory);
 			server.createContext("/api/prices", this::handlePrices);
 			server.createContext("/api/charts/overview", this::handleChartsOverview);
+			server.createContext("/api/charts/items", this::handleChartsItems);
 			server.createContext("/api/bulletins", this::handleBulletins);
 			server.createContext("/api/world/map", this::handleWorldMap);
 			server.createContext("/api/admin/security/cameras", this::handleAdminSecurityCameras);
@@ -570,17 +571,35 @@ public final class EconomyWebServer {
 			}
 		}
 		var manager = McEconomyMod.getEconomyManager();
-		JsonArray history = DashboardDataService.loadHistory(type, symbol, 48);
+		JsonArray history = "ITEM".equals(type)
+				? DashboardDataService.loadItemHistory(symbol, 48)
+				: DashboardDataService.loadHistory(type, symbol, 48);
 		JsonObject response = new JsonObject();
 		response.addProperty("symbol", symbol);
 		response.addProperty("type", type);
 		response.add("history", history);
 		long currentPriceMg = 0;
-		if ("COMMODITY".equals(type)) {
-			Commodity commodity = Commodity.fromId(symbol);
-			if (commodity != null) {
-				currentPriceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
-				DashboardDataService.enrichCommodityRow(response, manager.marketService(), commodity, currentPriceMg);
+		if ("ITEM".equals(type) || "COMMODITY".equals(type)) {
+			var market = manager.marketService();
+			var entry = market.catalog().resolve(symbol);
+			if (entry == null && "COMMODITY".equals(type)) {
+				Commodity commodity = Commodity.fromId(symbol);
+				if (commodity != null) {
+					entry = market.catalog().resolve(commodity.item());
+				}
+			}
+			if (entry != null) {
+				currentPriceMg = market.priceEngine().getUnitPrice(entry.itemId());
+				response.addProperty("itemId", entry.itemId());
+				response.addProperty("name", entry.displayName());
+				var state = market.priceEngine().stateFor(entry.itemId());
+				if (state != null) {
+					double flow = state.supplyIndex() + state.demandIndex();
+					if (flow > 0) {
+						response.addProperty("supplySharePct", Math.round(state.supplyIndex() / flow * 1000) / 10.0);
+						response.addProperty("demandSharePct", Math.round(state.demandIndex() / flow * 1000) / 10.0);
+					}
+				}
 			}
 		} else if ("TOKEN".equals(type)) {
 			for (ExchangeToken token : manager.exchangeService().allTokens()) {
@@ -708,6 +727,32 @@ public final class EconomyWebServer {
 			return;
 		}
 		sendJson(exchange, 200, DashboardDataService.buildChartsOverview(session.get().playerUuid()));
+	}
+
+	private void handleChartsItems(HttpExchange exchange) throws IOException {
+		Optional<WebSession> session = requireSession(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
+			return;
+		}
+		int page = 0;
+		String search = "";
+		String query = exchange.getRequestURI().getQuery();
+		if (query != null) {
+			for (String part : query.split("&")) {
+				String[] kv = part.split("=", 2);
+				if (kv.length == 2 && "page".equals(kv[0])) {
+					try {
+						page = Math.max(0, Integer.parseInt(kv[1]));
+					} catch (NumberFormatException ignored) {
+					}
+				}
+				if (kv.length == 2 && "search".equals(kv[0])) {
+					search = java.net.URLDecoder.decode(kv[1], java.nio.charset.StandardCharsets.UTF_8);
+				}
+			}
+		}
+		sendJson(exchange, 200, DashboardDataService.buildChartsItems(page, search));
 	}
 
 	private void handleChartsPortfolio(HttpExchange exchange) throws IOException {

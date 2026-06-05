@@ -3,7 +3,7 @@ package com.mceconomy.web;
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.company.Company;
 import com.mceconomy.exchange.ExchangeToken;
-import com.mceconomy.market.Commodity;
+import com.mceconomy.market.MarketItemEntry;
 import com.mceconomy.persistence.repo.PriceHistoryRepository;
 
 import java.sql.SQLException;
@@ -27,12 +27,9 @@ public final class PriceHistoryService {
 			return;
 		}
 		try {
-			for (Commodity commodity : Commodity.values()) {
-				if (!commodity.sellable()) {
-					continue;
-				}
-				long price = manager.marketService().priceEngine().getUnitPrice(commodity);
-				repository.record("COMMODITY", commodity.id(), price, now);
+			for (MarketItemEntry entry : manager.marketService().catalog().allSorted()) {
+				long price = manager.marketService().priceEngine().getUnitPrice(entry.itemId());
+				repository.record("ITEM", entry.itemId(), price, now);
 			}
 			for (ExchangeToken token : manager.exchangeService().allTokens()) {
 				repository.record("TOKEN", token.symbol(), token.priceMg(), now);

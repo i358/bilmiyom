@@ -19,6 +19,7 @@ import com.mceconomy.justice.PrisonSentence;
 import com.mceconomy.market.Commodity;
 import com.mceconomy.market.CommodityState;
 import com.mceconomy.market.MarketItemEntry;
+import com.mceconomy.market.MarketItemState;
 import com.mceconomy.market.MarketService;
 import com.mceconomy.player.PlayerEconomyProfile;
 import com.mceconomy.privatebank.PrivateBank;
@@ -33,6 +34,7 @@ import java.util.UUID;
 
 public final class DashboardDataService {
 	public static final int MARKET_PAGE_SIZE = 48;
+	public static final int CHART_ITEMS_PAGE_SIZE = 24;
 
 	private DashboardDataService() {
 	}
@@ -117,8 +119,14 @@ public final class DashboardDataService {
 				if (charts.has("inflationHistory")) {
 					root.add("inflationHistory", charts.get("inflationHistory"));
 				}
-				if (charts.has("commodities")) {
-					root.add("commodities", charts.get("commodities"));
+				if (charts.has("marketTopItems")) {
+					root.add("marketTopItems", charts.get("marketTopItems"));
+				}
+				if (charts.has("topHistories")) {
+					root.add("topHistories", charts.get("topHistories"));
+				}
+				if (charts.has("marketItemCount")) {
+					root.addProperty("marketItemCount", charts.get("marketItemCount").getAsInt());
 				}
 				if (charts.has("termHistory")) {
 					root.add("termHistory", charts.get("termHistory"));
@@ -615,21 +623,22 @@ public final class DashboardDataService {
 		data.addProperty("economyIndexChangeBps", priceChangeBps(indexHistory, indexScaledMg));
 		data.add("indexHistory", indexHistory);
 
-		JsonArray commodities = new JsonArray();
-		for (Commodity commodity : Commodity.values()) {
-			if (!commodity.sellable()) {
+		JsonArray marketTopItems = new JsonArray();
+		var catalog = market.catalog();
+		int topCount = 0;
+		for (MarketItemEntry entry : catalog.allSorted()) {
+			if (!entry.sellable() && !entry.buyable()) {
 				continue;
 			}
-			JsonObject row = new JsonObject();
-			row.addProperty("id", commodity.id());
-			row.addProperty("name", commodity.displayName());
-			long priceMg = market.priceEngine().getUnitPrice(commodity);
-			row.addProperty("priceMg", priceMg);
-			row.addProperty("category", commodity.jobCategory().name());
-			enrichCommodityRow(row, market, commodity, priceMg);
-			commodities.add(row);
+			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
+			JsonObject row = marketItemRow(market, entry, priceMg, 24);
+			if (topCount < 8) {
+				marketTopItems.add(row);
+				topCount++;
+			}
 		}
-		data.add("commodities", commodities);
+		data.add("marketTopItems", marketTopItems);
+		data.addProperty("marketItemCount", catalog.allSorted().size());
 
 		JsonArray tokens = new JsonArray();
 		for (ExchangeToken token : manager.exchangeService().allTokens()) {
@@ -645,20 +654,17 @@ public final class DashboardDataService {
 		}
 		data.add("tokens", tokens);
 
-		JsonArray topCommodityHistories = new JsonArray();
+		JsonArray topItemHistories = new JsonArray();
 		int count = 0;
-		for (Commodity commodity : Commodity.values()) {
-			if (!commodity.sellable() || count >= 5) {
+		for (MarketItemEntry entry : catalog.allSorted()) {
+			if (!entry.sellable() || count >= 5) {
 				continue;
 			}
-			JsonObject row = new JsonObject();
-			row.addProperty("id", commodity.id());
-			row.addProperty("name", commodity.displayName());
-			row.add("history", loadHistory("COMMODITY", commodity.id(), 24));
-			topCommodityHistories.add(row);
+			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
+			topItemHistories.add(marketItemRow(market, entry, priceMg, 24));
 			count++;
 		}
-		data.add("topHistories", topCommodityHistories);
+		data.add("topHistories", topItemHistories);
 		data.addProperty("municipalBudgetMg", manager.centralBank().getMunicipalBudgetMg());
 		data.addProperty("municipalBudget", GoldStandard.formatMilligrams(manager.centralBank().getMunicipalBudgetMg()));
 		data.add("inflationHistory", loadHistory("MACRO", "inflation", 48));
@@ -675,6 +681,24 @@ public final class DashboardDataService {
 			data.add("termHistory", termHistory);
 			data.addProperty("termHistoryChangeBps", priceChangeBps(termHistory, termBal));
 		}
+		return data;
+	}
+
+	public static JsonObject buildChartsItems(int page, String search) {
+		var market = McEconomyMod.getEconomyManager().marketService();
+		var catalog = market.catalog();
+		JsonObject data = new JsonObject();
+		data.addProperty("page", page);
+		data.addProperty("pageCount", catalog.pageCount(CHART_ITEMS_PAGE_SIZE, search, null));
+		data.addProperty("pageSize", CHART_ITEMS_PAGE_SIZE);
+		data.addProperty("totalItems", catalog.allSorted().size());
+		JsonArray items = new JsonArray();
+		for (MarketItemEntry entry : catalog.page(page, CHART_ITEMS_PAGE_SIZE, search, null)) {
+			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
+			items.add(marketItemRow(market, entry, priceMg, 48));
+		}
+		data.add("items", items);
+		data.addProperty("updatedAt", System.currentTimeMillis());
 		return data;
 	}
 
@@ -1198,6 +1222,53 @@ public final class DashboardDataService {
 		}
 		obj.add("items", items);
 		return obj;
+	}
+
+	public static JsonArray loadItemHistory(String itemId, int limit) {
+		JsonArray history = loadHistory("ITEM", itemId, limit);
+		if (!history.isEmpty()) {
+			return history;
+		}
+		var entry = McEconomyMod.getEconomyManager().marketService().catalog().resolve(itemId);
+		if (entry != null) {
+			Commodity commodity = Commodity.fromItem(entry.item());
+			if (commodity != null) {
+				return loadHistory("COMMODITY", commodity.id(), limit);
+			}
+		}
+		return history;
+	}
+
+	public static JsonObject marketItemRow(MarketService market, MarketItemEntry entry, long priceMg, int historyLimit) {
+		JsonObject row = new JsonObject();
+		row.addProperty("itemId", entry.itemId());
+		row.addProperty("id", entry.itemId());
+		row.addProperty("name", entry.displayName());
+		row.addProperty("priceMg", priceMg);
+		row.addProperty("sellable", entry.sellable());
+		row.addProperty("buyable", entry.buyable());
+		row.addProperty("tier", entry.valueTier().name());
+		enrichItemRow(row, market, entry.itemId(), priceMg, historyLimit);
+		return row;
+	}
+
+	public static void enrichItemRow(JsonObject row, MarketService market, String itemId, long priceMg, int historyLimit) {
+		MarketItemState state = market.priceEngine().stateFor(itemId);
+		if (state != null) {
+			row.addProperty("supplyIndex", state.supplyIndex());
+			row.addProperty("demandIndex", state.demandIndex());
+			double flow = state.supplyIndex() + state.demandIndex();
+			if (flow > 0) {
+				row.addProperty("supplySharePct", Math.round(state.supplyIndex() / flow * 1000) / 10.0);
+				row.addProperty("demandSharePct", Math.round(state.demandIndex() / flow * 1000) / 10.0);
+			} else {
+				row.addProperty("supplySharePct", 50.0);
+				row.addProperty("demandSharePct", 50.0);
+			}
+		}
+		JsonArray hist = loadItemHistory(itemId, historyLimit);
+		row.add("history", hist);
+		row.addProperty("changeBps", priceChangeBps(hist, priceMg));
 	}
 
 	public static JsonArray loadHistory(String type, String symbol, int limit) {

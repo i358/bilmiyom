@@ -167,10 +167,22 @@
               <select id="shareChartSelect"></select>
               <canvas id="shareChart"></canvas>
             </div>
-            <div class="panel-card span2 chart-box">
-              <h3>Market Fiyat Grafiği</h3>
-              <select id="chartSymbol"></select>
-              <canvas id="priceChart"></canvas>
+            <div class="panel-card span2">
+              <div class="form-row" style="justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+                <h3 style="margin:0">Market Item Fiyat Grafikleri</h3>
+                <div class="form-row" style="gap:8px;align-items:center">
+                  <input type="search" id="itemChartSearch" placeholder="Item ara..." style="min-width:180px" />
+                  <button type="button" class="btn btn-ghost btn-sm" id="itemChartSearchBtn">Ara</button>
+                </div>
+              </div>
+              <div class="form-row" style="justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+                <span class="hint" id="itemChartsMeta">Yükleniyor...</span>
+                <div class="form-row" style="gap:8px">
+                  <button type="button" class="btn btn-ghost btn-sm" id="itemChartsPrev">← Önceki</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="itemChartsNext">Sonraki →</button>
+                </div>
+              </div>
+              <div id="itemChartsGrid" class="portfolio-live-grid"><p class="hint">Yükleniyor...</p></div>
             </div>
             <div class="panel-card span2 chart-box">
               <h3>Vadeli Hesap Bakiyesi</h3>

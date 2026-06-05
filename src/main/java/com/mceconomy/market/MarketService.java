@@ -1,8 +1,6 @@
 package com.mceconomy.market;
 
-import com.google.gson.JsonObject;
 import com.mceconomy.company.CeoProfitSplit;
-import com.mceconomy.debug.DebugSessionLog;
 import com.mceconomy.company.Company;
 import com.mceconomy.company.EmploymentRole;
 import com.mceconomy.company.PlayerEmploymentService;
@@ -187,14 +185,6 @@ public final class MarketService {
 		MarketItemEntry entry = catalog.resolve(item);
 		if (entry == null || !entry.sellable() || quantity <= 0) {
 			lastSellFailure = SellFailure.NOT_SELLABLE;
-			// #region agent log
-			JsonObject pre = new JsonObject();
-			pre.addProperty("item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString());
-			pre.addProperty("quantity", quantity);
-			pre.addProperty("hasEntry", entry != null);
-			pre.addProperty("sellable", entry != null && entry.sellable());
-			DebugSessionLog.log("MarketService.sell", "precheck failed", "H3-H4", pre);
-			// #endregion
 			return false;
 		}
 		int sellableCount = countItems(player, item);
@@ -203,48 +193,20 @@ public final class MarketService {
 				player.sendSystemMessage(Component.literal(
 						"§c[Piyasa] §fKayip MB seri numarali zimmetli esya satilamaz."));
 			}
-			// #region agent log
-			JsonObject inv = new JsonObject();
-			inv.addProperty("item", entry.itemId());
-			inv.addProperty("requested", quantity);
-			inv.addProperty("sellableCount", sellableCount);
-			inv.addProperty("hasWanted", hasWantedItem(player, item));
-			DebugSessionLog.log("MarketService.sell", "insufficient sellable count", "H2", inv);
-			// #endregion
 			lastSellFailure = SellFailure.INSUFFICIENT_ITEMS;
 			return false;
 		}
 		int removed = removeItems(player, item, quantity);
 		if (removed < quantity) {
-			// #region agent log
-			JsonObject rem = new JsonObject();
-			rem.addProperty("item", entry.itemId());
-			rem.addProperty("requested", quantity);
-			rem.addProperty("removed", removed);
-			DebugSessionLog.log("MarketService.sell", "remove partial", "H2", rem);
-			// #endregion
 			lastSellFailure = SellFailure.REMOVE_FAILED;
 			return false;
 		}
 		int effectiveQty = quantity;
 		if (depotService != null) {
 			ServerLevel level = (ServerLevel) player.level();
-			int freeSlots = depotService.freeSlotCount(level, FacilityType.MARKET);
-			int depotTotal = depotService.totalItemCount(level, FacilityType.MARKET);
 			int stored = depotService.depositItem(level, FacilityType.MARKET, item, quantity);
 			int overflow = quantity - stored;
 			if (overflow > 0) {
-				// #region agent log
-				JsonObject depot = new JsonObject();
-				depot.addProperty("item", entry.itemId());
-				depot.addProperty("requested", quantity);
-				depot.addProperty("stored", stored);
-				depot.addProperty("overflow", overflow);
-				depot.addProperty("depotFreeSlots", freeSlots);
-				depot.addProperty("depotTotalItems", depotTotal);
-				depot.addProperty("virtualSupply", true);
-				DebugSessionLog.log("MarketService.sell", "depot overflow to virtual supply", "H1", depot);
-				// #endregion
 				if (stored == 0) {
 					player.sendSystemMessage(Component.literal(
 							"§e[Piyasa] §fMarket deposu dolu — satis sanal arza islendi."));
@@ -279,12 +241,6 @@ public final class MarketService {
 
 	public boolean sellAll(ServerPlayer player, Item item) {
 		int count = countItems(player, item);
-		// #region agent log
-		JsonObject all = new JsonObject();
-		all.addProperty("item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString());
-		all.addProperty("sellableCount", count);
-		DebugSessionLog.log("MarketService.sellAll", "sellAll attempt", "H2", all);
-		// #endregion
 		if (count <= 0) {
 			return false;
 		}

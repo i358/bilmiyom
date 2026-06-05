@@ -76,11 +76,19 @@ public final class FacilityDepotService {
 		if (quantity <= 0) {
 			return 0;
 		}
-		ItemStack stack = new ItemStack(item, quantity);
-		if (deposit(level, type, stack)) {
-			return quantity;
+		int maxStack = new ItemStack(item).getMaxStackSize();
+		int deposited = 0;
+		int remaining = quantity;
+		while (remaining > 0) {
+			int chunk = Math.min(remaining, maxStack);
+			ItemStack stack = new ItemStack(item, chunk);
+			if (!deposit(level, type, stack)) {
+				break;
+			}
+			deposited += chunk;
+			remaining -= chunk;
 		}
-		return 0;
+		return deposited;
 	}
 
 	/** Altin depodan seri numarali yiginlar halinde ceker. */

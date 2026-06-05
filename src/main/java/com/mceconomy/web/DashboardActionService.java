@@ -322,6 +322,7 @@ public final class DashboardActionService {
 		JsonObject inv = inventorySellBreakdown(player, item);
 		inv.addProperty("itemId", itemId);
 		inv.addProperty("quantity", quantity);
+		inv.addProperty("maxStackSize", item.getDefaultMaxStackSize());
 		inv.addProperty("catalogSellable", true);
 		FacilityDepotService depot = McEconomyMod.getEconomyManager().facilityDepotService();
 		if (depot != null && player.level() instanceof ServerLevel level) {
@@ -333,7 +334,16 @@ public final class DashboardActionService {
 		if (market.sell(player, item, quantity)) {
 			return ActionResult.ok(quantity + "x " + entry.displayName() + " satildi.");
 		}
-		return ActionResult.fail("Envanterde yeterli esya yok.");
+		return ActionResult.fail(sellFailureMessage(market.lastSellFailure()));
+	}
+
+	private static String sellFailureMessage(com.mceconomy.market.MarketService.SellFailure failure) {
+		return switch (failure) {
+			case DEPOT_FULL -> "Market deposu dolu — tek yiginda sigmayan veya sandikta yer kalmadi.";
+			case INSUFFICIENT_ITEMS, REMOVE_FAILED -> "Envanterde yeterli esya yok.";
+			case NOT_SELLABLE -> "Bu item satilamaz.";
+			default -> "Satis basarisiz.";
+		};
 	}
 
 	private static JsonObject inventorySellBreakdown(ServerPlayer player, net.minecraft.world.item.Item item) {
@@ -389,10 +399,10 @@ public final class DashboardActionService {
 		}
 		DebugSessionLog.log("DashboardActionService.marketSellAllByItem", "sell-all request", "H1-H2-H3", inv);
 		// #endregion
-		if (McEconomyMod.getEconomyManager().marketService().sellAll(player, item)) {
+		if (market.sellAll(player, item)) {
 			return ActionResult.ok("Tum " + com.mceconomy.market.ItemPriceHeuristic.displayName(item) + " satildi.");
 		}
-		return ActionResult.fail("Satilacak item yok.");
+		return ActionResult.fail(sellFailureMessage(market.lastSellFailure()));
 	}
 
 	private static net.minecraft.world.item.Item resolveMarketItem(String itemId, String commodityId) {

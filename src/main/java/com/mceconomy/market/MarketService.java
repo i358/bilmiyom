@@ -32,6 +32,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class MarketService {
+	public enum SellFailure {
+		NONE,
+		NOT_SELLABLE,
+		INSUFFICIENT_ITEMS,
+		REMOVE_FAILED,
+		DEPOT_FULL
+	}
+
+	private SellFailure lastSellFailure = SellFailure.NONE;
 	private final Map<Commodity, CommodityState> legacyStates = new EnumMap<>(Commodity.class);
 	private final Map<String, MarketItemState> itemStates = new HashMap<>();
 	private final MarketRepository legacyRepository;
@@ -169,9 +178,15 @@ public final class MarketService {
 		return commodity != null && sell(player, commodity.item(), quantity);
 	}
 
+	public SellFailure lastSellFailure() {
+		return lastSellFailure;
+	}
+
 	public boolean sell(ServerPlayer player, Item item, int quantity) {
+		lastSellFailure = SellFailure.NONE;
 		MarketItemEntry entry = catalog.resolve(item);
 		if (entry == null || !entry.sellable() || quantity <= 0) {
+			lastSellFailure = SellFailure.NOT_SELLABLE;
 			// #region agent log
 			JsonObject pre = new JsonObject();
 			pre.addProperty("item", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString());
@@ -196,6 +211,7 @@ public final class MarketService {
 			inv.addProperty("hasWanted", hasWantedItem(player, item));
 			DebugSessionLog.log("MarketService.sell", "insufficient sellable count", "H2", inv);
 			// #endregion
+			lastSellFailure = SellFailure.INSUFFICIENT_ITEMS;
 			return false;
 		}
 		int removed = removeItems(player, item, quantity);
@@ -207,6 +223,7 @@ public final class MarketService {
 			rem.addProperty("removed", removed);
 			DebugSessionLog.log("MarketService.sell", "remove partial", "H2", rem);
 			// #endregion
+			lastSellFailure = SellFailure.REMOVE_FAILED;
 			return false;
 		}
 		int effectiveQty = quantity;
@@ -215,23 +232,26 @@ public final class MarketService {
 			int freeSlots = depotService.freeSlotCount(level, FacilityType.MARKET);
 			int depotTotal = depotService.totalItemCount(level, FacilityType.MARKET);
 			int stored = depotService.depositItem(level, FacilityType.MARKET, item, quantity);
-			if (stored < quantity) {
-				giveItems(player, item, quantity - stored);
+			int overflow = quantity - stored;
+			if (overflow > 0) {
 				// #region agent log
 				JsonObject depot = new JsonObject();
 				depot.addProperty("item", entry.itemId());
 				depot.addProperty("requested", quantity);
 				depot.addProperty("stored", stored);
+				depot.addProperty("overflow", overflow);
 				depot.addProperty("depotFreeSlots", freeSlots);
 				depot.addProperty("depotTotalItems", depotTotal);
-				depot.addProperty("rollbackQty", quantity - stored);
-				DebugSessionLog.log("MarketService.sell", "depot deposit failed or partial", "H1-H5", depot);
+				depot.addProperty("virtualSupply", true);
+				DebugSessionLog.log("MarketService.sell", "depot overflow to virtual supply", "H1", depot);
 				// #endregion
 				if (stored == 0) {
-					syncInventory(player);
-					return false;
+					player.sendSystemMessage(Component.literal(
+							"§e[Piyasa] §fMarket deposu dolu — satis sanal arza islendi."));
+				} else {
+					player.sendSystemMessage(Component.literal(
+							"§e[Piyasa] §fDepoya " + stored + "/" + quantity + " sigdi; kalan sanal arza eklendi."));
 				}
-				effectiveQty = stored;
 			}
 		}
 
@@ -449,6 +469,13 @@ public final class MarketService {
 	}
 
 	private static void giveItems(ServerPlayer player, Item item, int quantity) {
-		player.getInventory().add(new ItemStack(item, quantity));
+		int maxStack = new ItemStack(item).getMaxStackSize();
+		int remaining = quantity;
+		while (remaining > 0) {
+			int chunk = Math.min(remaining, maxStack);
+			ItemStack stack = new ItemStack(item, chunk);
+			player.getInventory().add(stack);
+			remaining -= chunk;
+		}
 	}
 }

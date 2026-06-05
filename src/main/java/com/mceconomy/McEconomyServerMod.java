@@ -14,9 +14,12 @@ import com.mceconomy.command.InsuranceCommand;
 import com.mceconomy.command.JusticeCommand;
 import com.mceconomy.command.MayorCommand;
 import com.mceconomy.command.PropertyCommand;
+import com.mceconomy.command.EconomyPanelCommand;
 import com.mceconomy.command.VehicleCommand;
+import com.mceconomy.network.EconomyNetworking;
+import com.mceconomy.network.EconomyPanelActionPayload;
 import com.mceconomy.network.VehicleInputPayload;
-import com.mceconomy.network.VehicleStatePayload;
+import com.mceconomy.panel.EconomyPanelService;
 import com.mceconomy.command.HelpCommand;
 import com.mceconomy.command.JobCommand;
 import com.mceconomy.command.LoanCommand;
@@ -33,10 +36,6 @@ import com.mceconomy.company.CompanyVault;
 import com.mceconomy.vault.PlayerVault;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.EconomyManager;
-import com.mceconomy.gui.BankGuiManager;
-import com.mceconomy.gui.ExchangeGuiManager;
-import com.mceconomy.gui.IllegalGuiManager;
-import com.mceconomy.network.EconomyHudPayload;
 import com.mceconomy.network.EconomyHudSync;
 import com.mceconomy.tick.EconomyTickScheduler;
 import com.mceconomy.world.CentralBankPlacer;
@@ -48,7 +47,6 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -61,9 +59,7 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 	@Override
 	public void onInitializeServer() {
 		EconomyConfig.load();
-		PayloadTypeRegistry.clientboundPlay().register(EconomyHudPayload.TYPE, EconomyHudPayload.STREAM_CODEC);
-		PayloadTypeRegistry.clientboundPlay().register(VehicleStatePayload.TYPE, VehicleStatePayload.STREAM_CODEC);
-		PayloadTypeRegistry.serverboundPlay().register(VehicleInputPayload.TYPE, VehicleInputPayload.STREAM_CODEC);
+		EconomyNetworking.registerPlayPayloads();
 		tickScheduler = new EconomyTickScheduler();
 
 		ServerLifecycleEvents.SERVER_STARTED.register(server -> {
@@ -146,7 +142,18 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 			MayorCommand.register(dispatcher);
 			PropertyCommand.register(dispatcher);
 			VehicleCommand.register(dispatcher);
+			EconomyPanelCommand.register(dispatcher);
 		});
+
+		net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+				EconomyPanelActionPayload.TYPE, (payload, context) -> {
+					var player = context.player();
+					var result = EconomyPanelService.handleAction(player, payload.action(), payload.bodyJson());
+					if (!"panel/sync".equals(payload.action())) {
+						player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+								(result.success() ? "§a[Ekonomi] " : "§c[Ekonomi] ") + result.message()));
+					}
+				});
 
 		net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
 				VehicleInputPayload.TYPE, (payload, context) -> {
@@ -200,6 +207,11 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 				player.sendSystemMessage(Component.literal("§c[Sirket] §fHQ korunuyor."));
 				return false;
 			}
+			if (manager.vehicleService() != null
+					&& manager.vehicleService().isProtectedVehicleBlock(pos)) {
+				player.sendSystemMessage(Component.literal("§c[Arac] §fArac govdesi korunuyor."));
+				return false;
+			}
 			return true;
 		});
 
@@ -240,17 +252,17 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 				return InteractionResult.PASS;
 			}
 			if (entity.entityTags().contains(CentralBankPlacer.NPC_TAG)) {
-				BankGuiManager.openMainMenu(serverPlayer);
+				EconomyPanelService.openPanel(serverPlayer, "bank");
 				return InteractionResult.SUCCESS;
 			}
 			if (entity.entityTags().contains(CentralBankPlacer.MASAK_NPC_TAG)) {
 				serverPlayer.sendSystemMessage(net.minecraft.network.chat.Component.literal(
 						"§c[MASAK] §fFinansal suçları önlemek için işlemleriniz izlenmektedir."));
-				BankGuiManager.openMainMenu(serverPlayer);
+				EconomyPanelService.openPanel(serverPlayer, "bank");
 				return InteractionResult.SUCCESS;
 			}
 			if (entity.entityTags().contains(CentralBankPlacer.EXCHANGE_NPC_TAG)) {
-				ExchangeGuiManager.openHub(serverPlayer);
+				EconomyPanelService.openPanel(serverPlayer, "exchange");
 				return InteractionResult.SUCCESS;
 			}
 			if (entity.entityTags().contains(JobSeekerNpcSpawner.JOB_SEEKER_TAG)) {
@@ -259,7 +271,7 @@ public class McEconomyServerMod implements DedicatedServerModInitializer {
 				return InteractionResult.SUCCESS;
 			}
 			if (entity.entityTags().contains(CentralBankPlacer.BLACK_MARKET_NPC_TAG)) {
-				IllegalGuiManager.openHub(serverPlayer);
+				EconomyPanelService.openPanel(serverPlayer, "illegal");
 				return InteractionResult.SUCCESS;
 			}
 			return InteractionResult.PASS;

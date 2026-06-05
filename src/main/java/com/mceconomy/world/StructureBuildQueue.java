@@ -28,9 +28,9 @@ public final class StructureBuildQueue {
 		void onComplete(ServerLevel level);
 	}
 
-	private record Job(UUID ownerUuid, BlockPlacer placer, int nextIndex, String label) {
+	private record Job(UUID ownerUuid, long linkedId, BlockPlacer placer, int nextIndex, String label) {
 		Job advance(int placed) {
-			return new Job(ownerUuid, placer, nextIndex + placed, label);
+			return new Job(ownerUuid, linkedId, placer, nextIndex + placed, label);
 		}
 	}
 
@@ -43,10 +43,14 @@ public final class StructureBuildQueue {
 	}
 
 	public boolean enqueue(UUID ownerUuid, BlockPlacer placer, String label) {
+		return enqueue(ownerUuid, -1L, placer, label);
+	}
+
+	public boolean enqueue(UUID ownerUuid, long linkedId, BlockPlacer placer, String label) {
 		if (queue.size() >= EconomyConfig.maxPendingStructureJobs()) {
 			return false;
 		}
-		queue.add(new Job(ownerUuid, placer, 0, label));
+		queue.add(new Job(ownerUuid, linkedId, placer, 0, label));
 		progressByOwner.put(ownerUuid, label + " — %0");
 		return true;
 	}
@@ -109,6 +113,19 @@ public final class StructureBuildQueue {
 		progressByOwner.remove(uuid);
 		for (Iterator<Job> it = queue.iterator(); it.hasNext(); ) {
 			if (it.next().ownerUuid().equals(uuid)) {
+				it.remove();
+			}
+		}
+	}
+
+	public void purgeForLinkedId(long linkedId) {
+		if (linkedId <= 0) {
+			return;
+		}
+		for (Iterator<Job> it = queue.iterator(); it.hasNext(); ) {
+			Job job = it.next();
+			if (job.linkedId() == linkedId) {
+				progressByOwner.remove(job.ownerUuid());
 				it.remove();
 			}
 		}

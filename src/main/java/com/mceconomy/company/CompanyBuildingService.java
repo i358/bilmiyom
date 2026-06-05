@@ -32,7 +32,7 @@ public final class CompanyBuildingService {
 	public void scheduleHeadquarters(Company company, ServerLevel level, UUID ownerUuid) {
 		BlockPos origin = CompanyHeadquartersPlacer.findOrigin(level, company.id());
 		String label = company.name() + " HQ";
-		StructureBuildQueue.get().enqueue(ownerUuid,
+		boolean queued = StructureBuildQueue.get().enqueue(ownerUuid, company.id(),
 				CompanyHeadquartersPlacer.placer(origin, () -> {
 					try {
 						repository.save(company.id(), origin, origin.getY());
@@ -41,6 +41,9 @@ public final class CompanyBuildingService {
 						com.mceconomy.McEconomyMod.LOGGER.error("HQ kaydi", e);
 					}
 				}), label);
+		if (!queued) {
+			com.mceconomy.McEconomyMod.LOGGER.warn("HQ insaat kuyrugu dolu: {}", company.name());
+		}
 	}
 
 	public boolean canBuildForOwner(UUID owner) throws SQLException {

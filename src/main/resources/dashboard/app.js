@@ -385,20 +385,22 @@ async function loadPortfolioLive() {
 function startChartLiveRefresh() {
   stopChartLiveRefresh();
   chartLiveTimer = setInterval(async () => {
-    if (!document.getElementById('page-charts')?.classList.contains('active')) return;
-    await loadPortfolioLive();
-    const sym = document.getElementById('chartSymbol')?.value;
-    if (sym) loadPriceChart(sym);
-    const tok = document.getElementById('tokenChartSelect')?.value;
-    if (tok) loadTokenChart(tok);
-    const shr = document.getElementById('shareChartSelect')?.value;
-    if (shr) loadShareChart(shr);
-    const levId = document.getElementById('levChartSelect')?.value;
-    if (levId) loadLeverageChart(+levId);
-    overview = await api('/charts/overview');
-    renderIndexChart(overview?.indexHistory || []);
-    renderMacroCharts();
-    renderTokenBar(overview?.tokens || []);
+    try {
+      if (!document.getElementById('page-charts')?.classList.contains('active')) return;
+      await loadPortfolioLive();
+      const sym = document.getElementById('chartSymbol')?.value;
+      if (sym) loadPriceChart(sym);
+      const tok = document.getElementById('tokenChartSelect')?.value;
+      if (tok) loadTokenChart(tok);
+      const shr = document.getElementById('shareChartSelect')?.value;
+      if (shr) loadShareChart(shr);
+      const levId = document.getElementById('levChartSelect')?.value;
+      if (levId) loadLeverageChart(+levId);
+      overview = await api('/charts/overview');
+      renderIndexChart(overview?.indexHistory || []);
+      renderMacroCharts();
+      renderTokenBar(overview?.tokens || []);
+    } catch (e) { /* sessiz — sonraki tur */ }
   }, 20000);
 }
 
@@ -490,9 +492,9 @@ async function loadInventory() {
   const items = data.items || [];
   if (!items.length) { box.innerHTML = '<p class="hint">Envanteriniz boş.</p>'; return; }
   box.innerHTML = '<div class="inv-grid">' + items.map(i => {
-    const sellable = i.commodityId ? 'badge-ok' : 'badge-muted';
-    const tag = i.commodityId ? 'Market' : 'Karaborsa';
-    return `<div class="inv-item inv-selectable" data-item-id="${i.itemId}" data-commodity="${i.commodityId || ''}" data-count="${i.count}" data-name="${i.name.replace(/"/g, '&quot;')}">
+    const sellable = i.marketable ? 'badge-ok' : 'badge-muted';
+    const tag = i.marketable ? 'Market' : 'Karaborsa';
+    return `<div class="inv-item inv-selectable" data-item-id="${i.itemId}" data-marketable="${i.marketable ? '1' : '0'}" data-count="${i.count}" data-name="${i.name.replace(/"/g, '&quot;')}">
       <div><span class="inv-name">${i.name}</span> <span class="badge ${sellable}">${tag}</span></div>
       <span class="inv-count">x${i.count}</span>
     </div>`;
@@ -505,31 +507,40 @@ async function loadInventory() {
 function selectInventoryItem(el) {
   selectedInvItem = {
     itemId: el.dataset.itemId,
-    commodityId: el.dataset.commodity || null,
+    marketable: el.dataset.marketable === '1',
     count: +el.dataset.count,
     name: el.dataset.name
   };
   const panel = document.getElementById('invActionPanel');
   const sellBtn = document.getElementById('invMarketSellBtn');
+  const sellAllBtn = document.getElementById('invMarketSellAllBtn');
   if (!panel) return;
   panel.classList.remove('hidden');
   document.getElementById('invActionTitle').textContent = selectedInvItem.name;
   document.getElementById('invActionMeta').textContent = 'Envanterde: x' + selectedInvItem.count
-    + (selectedInvItem.commodityId ? ' · Market emtiasi: ' + selectedInvItem.commodityId : ' · Sadece karaborsa ilani');
+    + (selectedInvItem.marketable ? ' · Market fiyatindan satilabilir' : ' · Sadece karaborsa ilani');
   document.getElementById('invQty').max = selectedInvItem.count;
   document.getElementById('invQty').value = 1;
   const priceLabel = document.getElementById('invPriceLabel');
   const priceInput = document.getElementById('invPrice');
-  if (sellBtn) sellBtn.classList.toggle('hidden', !selectedInvItem.commodityId);
-  if (priceLabel) priceLabel.classList.remove('hidden');
-  if (priceInput) priceInput.classList.remove('hidden');
+  if (sellBtn) sellBtn.classList.toggle('hidden', !selectedInvItem.marketable);
+  if (sellAllBtn) sellAllBtn.classList.toggle('hidden', !selectedInvItem.marketable);
+  if (priceLabel) priceLabel.classList.toggle('hidden', selectedInvItem.marketable);
+  if (priceInput) priceInput.classList.toggle('hidden', selectedInvItem.marketable);
 }
 
 document.getElementById('invMarketSellBtn').onclick = () => {
-  if (!selectedInvItem?.commodityId) { showToast('Bu item markette satilamaz', false); return; }
+  if (!selectedInvItem?.marketable) { showToast('Bu item markette satilamaz', false); return; }
   doAction('/actions/inventory/market-sell', {
     itemId: selectedInvItem.itemId,
     quantity: +document.getElementById('invQty').value
+  }, () => { loadInventory(); refresh(); });
+};
+
+document.getElementById('invMarketSellAllBtn').onclick = () => {
+  if (!selectedInvItem?.marketable) { showToast('Bu item markette satilamaz', false); return; }
+  doAction('/actions/inventory/market-sell-all', {
+    itemId: selectedInvItem.itemId
   }, () => { loadInventory(); refresh(); });
 };
 
@@ -553,7 +564,7 @@ async function loadEmployees() {
     const emps = (c.employees || []).map(e => `
       <div class="list-item emp-row">
         <div><strong>${e.name}</strong> <span class="badge badge-muted">${e.role}</span></div>
-        <div class="hint">Maaş: ${e.salary} · Üretim: ${e.produced}</div>
+        <div class="hint">Maaş: ${e.salary} · Üretim: ${e.produced ?? '—'}</div>
         <div class="form-row">
           <input type="number" min="1" placeholder="Yeni maaş ($)" data-raise-input="${e.id}" style="max-width:140px">
           <button class="btn btn-accent btn-sm" data-raise="${e.id}">Zam</button>
@@ -1056,7 +1067,12 @@ document.getElementById('mapReplaySpeed')?.addEventListener('input', e => { mapR
 
 async function refresh() {
   [me, catalog, overview] = await Promise.all([api('/me'), api('/catalog'), api('/charts/overview')]);
-  if (me.error) { show('login'); return; }
+  if (me.error || !me.name) {
+    showToast(me.message || me.error || 'Giris gerekli', false);
+    show('login');
+    return;
+  }
+  setGoldFactor(me.goldFactor);
   show('app');
   const adminLink = document.getElementById('adminLink');
   if (adminLink) adminLink.classList.toggle('hidden', !me.op);
@@ -1166,6 +1182,12 @@ document.getElementById('marketSellBtn').onclick = () => doAction('/actions/mark
   commodity: document.getElementById('marketSellSelect').value, quantity: +document.getElementById('marketSellQty').value
 }, refresh);
 
+document.getElementById('marketSellAllBtn').onclick = () => {
+  const commodity = document.getElementById('marketSellSelect').value;
+  if (!commodity) { showToast('Emtia secin', false); return; }
+  doAction('/actions/market/sell-all', { commodity }, refresh);
+};
+
 document.getElementById('loanTakeBtn').onclick = () => doAction('/actions/loan/take', {
   mc: +document.getElementById('loanGrams').value
 }, refresh);
@@ -1233,7 +1255,7 @@ document.getElementById('coinCreateBtn').onclick = () => doAction('/actions/exch
   symbol: document.getElementById('coinSymbol').value,
   name: document.getElementById('coinName').value,
   supply: +document.getElementById('coinSupply').value,
-  priceMg: +document.getElementById('coinPriceMg').value
+  mc: +document.getElementById('coinPriceMg').value
 }, refresh);
 
 document.getElementById('listCompanyBtn').onclick = () => doAction('/actions/exchange/list', {
@@ -1382,7 +1404,7 @@ async function loadGuildPanel() {
       <button class="btn btn-accent btn-sm" id="guildJoinBtn">Katıl</button>
       <button class="btn btn-ghost btn-sm" id="guildLeaveBtn">Ayrıl</button>
     </div>
-    <label>Tutar (MC)</label><input id="guildMc" type="number" min="1" value="100">
+    <label>Tutar ($)</label><input id="guildMc" type="number" min="1" value="100">
     <div class="form-row">
       <button class="btn btn-gold btn-sm" id="guildDepositBtn">Kasaya yatır</button>
       <button class="btn btn-ghost btn-sm" id="guildWithdrawBtn">Kasadan çek (lider)</button>
@@ -1421,7 +1443,7 @@ async function loadMunicipalPanel() {
     <button class="btn btn-accent btn-sm" id="munVoteBtn">Oy ver</button>
     <hr style="border-color:var(--border);margin:16px 0">
     <p class="hint">Bütçe harcaması yalnızca başkan (oyunda).</p>
-    <label>Tutar (MC)</label><input id="munSpendMc" type="number" min="1" value="1000">
+    <label>Tutar ($)</label><input id="munSpendMc" type="number" min="1" value="1000">
     <label>Açıklama</label><input id="munSpendPurpose" placeholder="Proje / etkinlik">
     <button class="btn btn-gold btn-sm" id="munSpendBtn">Harcama yap</button>`;
   document.getElementById('munCandidateBtn')?.addEventListener('click', () =>
@@ -1434,13 +1456,31 @@ async function loadMunicipalPanel() {
       purpose: document.getElementById('munSpendPurpose').value
     }, loadMunicipalPanel));
 }
-function loadPropertyPanel() {
+async function loadPropertyPanel() {
   const el = document.getElementById('propertyPanel');
-  if (el) el.innerHTML = '<p class="hint">Satın alma ve TP yalnızca oyunda (/ev).</p>';
+  if (!el) return;
+  const m = me?.properties ? me : await api('/me');
+  const props = m?.properties || [];
+  if (!props.length) {
+    el.innerHTML = '<p class="hint">Ev yok. Oyunda: <code>/ev al cottage|house|villa</code></p>';
+    return;
+  }
+  el.innerHTML = props.map(p =>
+    `<div class="list-row"><strong>#${p.id}</strong> ${p.tier} — X:${p.x} Z:${p.z} · TP: <code>/ev tp ${p.id}</code></div>`
+  ).join('');
 }
-function loadVehiclePanel() {
+async function loadVehiclePanel() {
   const el = document.getElementById('vehiclePanel');
-  if (el) el.innerHTML = '<p class="hint">Araç spawn ve sürüş client mod ile.</p>';
+  if (!el) return;
+  const m = me?.vehicles ? me : await api('/me');
+  const cars = m?.vehicles || [];
+  if (!cars.length) {
+    el.innerHTML = '<p class="hint">Garaj bos. <code>/araba al sedan|suv</code> → <code>/araba cikar &lt;id&gt;</code></p>';
+    return;
+  }
+  el.innerHTML = cars.map(v =>
+    `<div class="list-row"><strong>#${v.id}</strong> ${v.model} — yakit ${Math.round(v.fuel)}% ${v.spawned ? '(yolda)' : '(garaj)'} · <code>/araba cikar ${v.id}</code></div>`
+  ).join('');
 }
 async function loadGovernmentPanel() {
   const m = me || await api('/me');

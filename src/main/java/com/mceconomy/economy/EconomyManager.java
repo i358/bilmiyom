@@ -179,6 +179,8 @@ public final class EconomyManager {
 			playerRepository = new PlayerRepository(database.connection());
 			BankRepository bankRepository = new BankRepository(database.connection());
 			MarketRepository marketRepository = new MarketRepository(database.connection());
+			com.mceconomy.persistence.repo.MarketItemRepository marketItemRepository =
+					new com.mceconomy.persistence.repo.MarketItemRepository(database.connection());
 			LoanRepository loanRepository = new LoanRepository(database.connection());
 			CompanyRepository companyRepository = new CompanyRepository(database.connection());
 
@@ -197,7 +199,7 @@ public final class EconomyManager {
 			loanManager = new LoanManager(loanRepository, currencyService, interestEngine);
 			loanManager.load();
 
-			marketService = new MarketService(marketRepository, currencyService, taxService);
+			marketService = new MarketService(marketRepository, marketItemRepository, currencyService, taxService);
 			marketService.load();
 
 			blackMarketService = new BlackMarketService(currencyService, marketService, masakService);

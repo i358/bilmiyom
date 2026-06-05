@@ -367,6 +367,25 @@ public final class PlayerEmploymentService {
 		}
 	}
 
+	public boolean raiseSalary(UUID ownerUuid, long employeeId, long newSalaryMg) {
+		PlayerEmployment employment = employments.get(employeeId);
+		if (employment == null || newSalaryMg <= 0) {
+			return false;
+		}
+		Company company = findCompanyById(employment.companyId());
+		if (company == null || !company.ownerUuid().equals(ownerUuid)) {
+			return false;
+		}
+		try {
+			employment.setSalaryMg(newSalaryMg);
+			repository.saveEmployment(employment);
+			return true;
+		} catch (SQLException e) {
+			McEconomyMod.LOGGER.error("Oyuncu maasi guncellenemedi", e);
+			return false;
+		}
+	}
+
 	public List<SalaryPaymentRepository.SalaryPaymentRow> salaryHistory(UUID playerUuid) {
 		try {
 			return salaryPaymentRepository.loadForPlayer(playerUuid, 30);

@@ -1,10 +1,26 @@
 let token = localStorage.getItem('mceconomy_token');
+let goldFactor = 1;
 
 async function api(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api' + path, { ...options, headers });
-  return res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    return { success: false, error: 'invalid_json', message: 'Sunucu yaniti okunamadi (' + res.status + ')' };
+  }
+  if (!res.ok && data.error == null && data.message == null) {
+    data.error = 'http_' + res.status;
+    data.message = res.status === 401 ? 'Oturum suresi doldu — yeniden giris yapin.' : ('HTTP ' + res.status);
+    data.success = false;
+  }
+  return data;
+}
+
+function setGoldFactor(f) {
+  goldFactor = f && f > 0 ? f : 1;
 }
 
 function showToast(message, ok = true) {
@@ -18,14 +34,19 @@ function showToast(message, ok = true) {
 }
 
 async function doAction(path, body, onSuccess) {
-  const data = await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
-  if (data.success) {
-    showToast(data.message, true);
-    if (onSuccess) onSuccess(data);
-    return true;
+  try {
+    const data = await api(path, { method: 'POST', body: JSON.stringify(body || {}) });
+    if (data.success) {
+      showToast(data.message, true);
+      if (onSuccess) onSuccess(data);
+      return true;
+    }
+    showToast(data.message || data.error || 'Islem basarisiz', false);
+    return false;
+  } catch (e) {
+    showToast('Baglanti hatasi: ' + e.message, false);
+    return false;
   }
-  showToast(data.message || 'İşlem başarısız', false);
-  return false;
 }
 
 function fillSelect(id, items, valueKey, labelFn, emptyLabel) {
@@ -36,7 +57,7 @@ function fillSelect(id, items, valueKey, labelFn, emptyLabel) {
 }
 
 function formatMg(mg) {
-  const usd = (mg || 0) / 1000;
+  const usd = (mg || 0) / 1000 * goldFactor;
   return '$' + usd.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
 }
 
@@ -48,16 +69,13 @@ async function logout() {
 }
 
 function setupNav(containerId, pagePrefix) {
-  document.querySelectorAll(`#${containerId} .nav-item[data-page]`).forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll(`#${containerId} .nav-item`).forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#' + containerId + ' .nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#' + containerId + ' .nav-item').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      const page = btn.dataset.page;
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      const target = document.getElementById(pagePrefix + page);
-      if (target) target.classList.add('active');
-      const title = document.getElementById('pageTitle');
-      if (title) title.textContent = btn.textContent.trim();
-    };
+      const page = document.getElementById(pagePrefix + btn.dataset.page);
+      if (page) page.classList.add('active');
+    });
   });
 }

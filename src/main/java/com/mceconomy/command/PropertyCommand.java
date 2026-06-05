@@ -69,15 +69,20 @@ public final class PropertyCommand {
 		if (player == null) {
 			return 0;
 		}
+		var svc = McEconomyMod.getEconomyManager().propertyService();
+		if (svc == null) {
+			source.sendFailure(Component.literal("§cKonut servisi hazir degil."));
+			return 0;
+		}
 		try {
-			String r = McEconomyMod.getEconomyManager().propertyService().sell(player, id);
+			String r = svc.sell(player, id);
 			if (r.startsWith("OK")) {
 				source.sendSuccess(() -> Component.literal("§a[Ev] §fSatildi."), false);
 				return 1;
 			}
 			source.sendFailure(Component.literal("§c" + r));
 		} catch (Exception e) {
-			source.sendFailure(Component.literal("§cHata."));
+			source.sendFailure(Component.literal("§c" + e.getMessage()));
 		}
 		return 0;
 	}

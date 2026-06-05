@@ -2,7 +2,7 @@ package com.mceconomy.command;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.economy.GoldStandard;
-import com.mceconomy.gui.BankGuiManager;
+import com.mceconomy.panel.EconomyPanelService;
 import com.mceconomy.util.Messages;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -40,7 +40,7 @@ public final class BankCommand {
 		if (player == null) {
 			return 0;
 		}
-		BankGuiManager.openMainMenu(player);
+		EconomyPanelService.openPanel(player, "bank");
 		return 1;
 	}
 

@@ -14,9 +14,17 @@ public final class Permissions {
 	public static boolean isServerOp(CommandSourceStack source) {
 		ServerPlayer player = source.getPlayer();
 		if (player != null) {
-			return source.getServer().getPlayerList().isOp(player.nameAndId());
+			return isServerOp(player);
 		}
 		return true;
+	}
+
+	public static boolean isServerOp(ServerPlayer player) {
+		var server = McEconomyMod.getEconomyManager().server();
+		if (server == null) {
+			return false;
+		}
+		return server.getPlayerList().isOp(player.nameAndId());
 	}
 
 	public static boolean isCentralBankOfficial(UUID uuid) {

@@ -14,13 +14,13 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.EntitySpawnReason;
-import net.minecraft.world.entity.vehicle.boat.Boat;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.decoration.ArmorStand;
 
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +32,7 @@ public final class VehicleService {
 	private final Map<Long, PlayerVehicle> vehicles = new HashMap<>();
 	private final Map<UUID, VehicleInput> inputByPlayer = new ConcurrentHashMap<>();
 	private final Map<UUID, Long> drivingVehicleId = new ConcurrentHashMap<>();
+	private final Map<Long, BlockVehicleController> controllers = new HashMap<>();
 
 	public VehicleService(VehicleRepository repository, CurrencyService currencyService) {
 		this.repository = repository;
@@ -40,8 +41,16 @@ public final class VehicleService {
 
 	public void load() throws SQLException {
 		vehicles.clear();
+		controllers.clear();
 		for (PlayerVehicle v : repository.loadAll()) {
-			vehicles.put(v.id(), v);
+			if (v.spawned()) {
+				PlayerVehicle parked = new PlayerVehicle(v.id(), v.ownerUuid(), v.model(), v.garagePos(),
+						v.fuel(), null, false);
+				vehicles.put(v.id(), parked);
+				repository.update(parked);
+			} else {
+				vehicles.put(v.id(), v);
+			}
 		}
 	}
 
@@ -60,7 +69,8 @@ public final class VehicleService {
 			return "Yetersiz bakiye (" + GoldStandard.formatMilligrams(price) + ").";
 		}
 		BlockPos garage = player.blockPosition();
-		PlayerVehicle v = repository.insert(player.getUUID(), model == null ? "sedan" : model, garage);
+		String m = model == null ? "sedan" : model.toLowerCase();
+		PlayerVehicle v = repository.insert(player.getUUID(), m, garage);
 		vehicles.put(v.id(), v);
 		return "OK";
 	}
@@ -73,33 +83,27 @@ public final class VehicleService {
 		if (v.spawned()) {
 			return "Zaten yolda.";
 		}
-		try {
-			if (repository.spawnedCount() >= EconomyConfig.maxActiveVehicles()) {
-				return "Sunucu arac limiti dolu.";
-			}
-		} catch (SQLException e) {
-			return "DB hatasi.";
+		if (repository.spawnedCount() >= EconomyConfig.maxActiveVehicles()) {
+			return "Sunucu arac limiti dolu.";
 		}
 		ServerLevel level = (ServerLevel) player.level();
-		Boat boat = net.minecraft.world.entity.EntityType.OAK_BOAT.create(
-				level, null, player.blockPosition(), EntitySpawnReason.COMMAND, false, false);
-		if (boat == null) {
+		BlockVehicleController ctrl = BlockVehicleController.spawn(
+				level, player.getX(), player.getY(), player.getZ(), player.getYRot(), v.model());
+		if (ctrl == null) {
 			return "Spawn basarisiz.";
 		}
-		boat.setPos(player.getX(), player.getY() + 0.05, player.getZ());
-		boat.setYRot(player.getYRot());
-		boat.setYBodyRot(player.getYRot());
-		boat.addTag(VEHICLE_TAG);
-		boat.setCustomName(net.minecraft.network.chat.Component.literal(
-				"§6[Arac] §f" + (v.model() == null ? "sedan" : v.model())));
-		boat.setCustomNameVisible(true);
-		level.addFreshEntity(boat);
-		player.startRiding(boat);
+		Entity chassis = level.getEntity(ctrl.chassisUuid());
+		if (chassis == null) {
+			return "Spawn basarisiz.";
+		}
+		player.startRiding(chassis);
+		controllers.put(v.id(), ctrl);
 		PlayerVehicle updated = new PlayerVehicle(v.id(), v.ownerUuid(), v.model(), v.garagePos(),
-				v.fuel(), boat.getUUID(), true);
+				v.fuel() > 0 ? v.fuel() : 100.0, ctrl.chassisUuid(), true);
 		vehicles.put(v.id(), updated);
 		repository.update(updated);
 		drivingVehicleId.put(player.getUUID(), v.id());
+		sendState(player, updated, ctrl.speed());
 		return "OK";
 	}
 
@@ -107,50 +111,62 @@ public final class VehicleService {
 		for (Map.Entry<UUID, Long> entry : new HashMap<>(drivingVehicleId).entrySet()) {
 			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
 			PlayerVehicle v = vehicles.get(entry.getValue());
-			if (player == null || v == null || !v.spawned() || v.entityUuid() == null) {
+			BlockVehicleController ctrl = controllers.get(entry.getValue());
+			if (player == null || v == null || ctrl == null || !v.spawned()) {
+				cleanupDrive(entry.getKey(), entry.getValue(), player != null ? (ServerLevel) player.level() : null);
+				continue;
+			}
+			ServerLevel level = (ServerLevel) player.level();
+			Entity entity = level.getEntity(ctrl.chassisUuid());
+			if (!(entity instanceof ArmorStand) || !player.isPassenger() || player.getVehicle() != entity) {
+				parkVehicle(v, level);
 				drivingVehicleId.remove(entry.getKey());
 				continue;
 			}
-			Entity entity = ((ServerLevel) player.level()).getEntity(v.entityUuid());
-			if (!(entity instanceof Boat boat) || !player.isPassenger()) {
-				parkVehicle(v, (ServerLevel) player.level());
+			double fuel = v.fuel();
+			if (fuel <= 0) {
+				player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§c[Arac] Yakit bitti."));
+				parkVehicle(v, level);
 				drivingVehicleId.remove(entry.getKey());
 				continue;
 			}
 			VehicleInput input = inputByPlayer.getOrDefault(player.getUUID(), VehicleInput.EMPTY);
-			double fuel = v.fuel();
-			if (fuel <= 0) {
-				player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-						"§c[Arac] Yakit bitti."));
-				parkVehicle(v, (ServerLevel) player.level());
-				drivingVehicleId.remove(entry.getKey());
-				continue;
+			ctrl.applyPhysics(level, input, fuel);
+			boolean moving = Math.abs(ctrl.speed()) > 0.02
+					&& (input.forward() || input.backward());
+			if (moving && server.getTickCount() % 20 == 0) {
+				fuel = Math.max(0, fuel - 0.35);
 			}
-			VehiclePhysicsSystem.tick(boat, input, fuel);
-			long fuelCost = EconomyConfig.vehicleFuelCostPerSecondMg() / 20;
-			if (server.getTickCount() % 20 == 0 && fuelCost > 0) {
-				fuel = Math.max(0, fuel - 1);
-				if (currencyService.withdraw(player.getUUID(), fuelCost, TransactionType.MARKET_BUY)) {
-					fuel = Math.max(0, v.fuel() - 0.5);
-				}
-			}
-			Vec3 vel = boat.getDeltaMovement();
-			double speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
 			PlayerVehicle next = new PlayerVehicle(v.id(), v.ownerUuid(), v.model(), v.garagePos(),
-					fuel, v.entityUuid(), true);
+					fuel, ctrl.chassisUuid(), true);
 			vehicles.put(v.id(), next);
 			try {
 				repository.update(next);
-			} catch (SQLException ignored) {
+			} catch (SQLException e) {
+				com.mceconomy.McEconomyMod.LOGGER.warn("Arac yakit DB guncelleme", e);
 			}
-			VehicleStatePayload state = new VehicleStatePayload(
-					boat.getX(), boat.getY(), boat.getZ(), boat.getYRot(), speed, fuel);
-			ServerPlayNetworking.send(player, state);
+			sendState(player, next, Math.abs(ctrl.speed()));
+		}
+	}
+
+	private void sendState(ServerPlayer player, PlayerVehicle v, double speed) {
+		ServerPlayNetworking.send(player, new VehicleStatePayload(
+				player.getX(), player.getY(), player.getZ(), player.getYRot(), speed, v.fuel(), v.model()));
+	}
+
+	private void cleanupDrive(UUID playerId, long vehicleId, ServerLevel level) {
+		drivingVehicleId.remove(playerId);
+		PlayerVehicle v = vehicles.get(vehicleId);
+		if (v != null && level != null) {
+			parkVehicle(v, level);
 		}
 	}
 
 	private void parkVehicle(PlayerVehicle v, ServerLevel level) {
-		if (v.entityUuid() != null) {
+		BlockVehicleController ctrl = controllers.remove(v.id());
+		if (ctrl != null) {
+			ctrl.discard(level);
+		} else if (v.entityUuid() != null) {
 			Entity e = level.getEntity(v.entityUuid());
 			if (e != null) {
 				e.discard();
@@ -164,6 +180,23 @@ public final class VehicleService {
 		} catch (SQLException e) {
 			com.mceconomy.McEconomyMod.LOGGER.error("Arac park", e);
 		}
+	}
+
+	public boolean isProtectedVehicleBlock(BlockPos pos) {
+		for (BlockVehicleController ctrl : controllers.values()) {
+			if (ctrl.placedBlocks().contains(pos)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public Set<BlockPos> allVehicleBlocks() {
+		Set<BlockPos> all = new HashSet<>();
+		for (BlockVehicleController ctrl : controllers.values()) {
+			all.addAll(ctrl.placedBlocks());
+		}
+		return all;
 	}
 
 	public java.util.List<PlayerVehicle> forOwner(UUID owner) {

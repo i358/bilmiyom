@@ -6,7 +6,7 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.vehicle.boat.Boat;
+import net.minecraft.world.entity.Entity;
 
 /** Arac surus HUD — hiz, yakit, model. */
 public final class VehicleHudOverlay {
@@ -24,7 +24,8 @@ public final class VehicleHudOverlay {
 		if (client.player == null || client.options.hideGui) {
 			return;
 		}
-		if (!(client.player.getVehicle() instanceof Boat boat) || !isMcVehicle(boat)) {
+		Entity vehicle = client.player.getVehicle();
+		if (vehicle == null || !VehicleInputCapture.isMcVehicle(vehicle)) {
 			return;
 		}
 		int sw = graphics.guiWidth();
@@ -33,17 +34,14 @@ public final class VehicleHudOverlay {
 		int y = sh - 72;
 		String model = VehicleHudState.model();
 		if (model.isEmpty()) {
-			model = "arac";
+			model = "sedan";
 		}
-		String line1 = "Arac: " + model + "  Hiz: " + String.format("%.1f", VehicleHudState.speed()) + " m/s";
+		double speedKmh = VehicleHudState.speed() * 20 * 3.6;
+		String line1 = "Arac: " + model + "  Hiz: " + String.format("%.0f", speedKmh) + " km/h";
 		String line2 = "Yakit: " + String.format("%.0f", VehicleHudState.fuel()) + "%";
-		graphics.fill(x - 4, y - 4, x + 160, y + 22, 0x99000000);
-		int fuelColor = VehicleHudState.fuel() > 25 ? 0x7BED9F : 0xE74C3C;
-		graphics.text(client.font, line1, x, y, 0xFFFFFF);
-		graphics.text(client.font, line2, x, y + 10, fuelColor);
-	}
-
-	static boolean isMcVehicle(Boat boat) {
-		return boat.hasCustomName() && boat.getCustomName().getString().contains("[Arac]");
+		graphics.fill(x - 4, y - 4, x + 180, y + 24, 0x99000000);
+		int fuelColor = VehicleHudState.fuel() > 25 ? 0xFF7BED9F : 0xFFE74C3C;
+		graphics.text(client.font, line1, x, y, 0xFFFFFFFF, false);
+		graphics.text(client.font, line2, x, y + 11, fuelColor, false);
 	}
 }

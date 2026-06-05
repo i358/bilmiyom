@@ -191,17 +191,62 @@ public final class DashboardActionService {
 	}
 
 	public static ActionResult marketSell(ServerPlayer player, String commodityId, int quantity) {
+		return marketSellByItem(player, null, commodityId, quantity);
+	}
+
+	public static ActionResult marketBuyByItem(ServerPlayer player, String itemId, String commodityId, int quantity) {
+		var market = McEconomyMod.getEconomyManager().marketService();
+		net.minecraft.world.item.Item item = resolveMarketItem(itemId, commodityId);
+		if (item == net.minecraft.world.item.Items.AIR) {
+			return ActionResult.fail("Gecersiz item.");
+		}
+		var entry = market.catalog().resolve(item);
+		if (entry == null || !entry.buyable()) {
+			return ActionResult.fail("Bu item satin alinamaz.");
+		}
+		if (market.buy(player, item, quantity)) {
+			return ActionResult.ok(quantity + "x " + entry.displayName() + " satin alindi.");
+		}
+		return ActionResult.fail("Yetersiz bakiye veya envanter dolu.");
+	}
+
+	public static ActionResult marketSellByItem(ServerPlayer player, String itemId, String commodityId, int quantity) {
+		var market = McEconomyMod.getEconomyManager().marketService();
+		net.minecraft.world.item.Item item = resolveMarketItem(itemId, commodityId);
+		if (item == net.minecraft.world.item.Items.AIR) {
+			return ActionResult.fail("Gecersiz item.");
+		}
+		var entry = market.catalog().resolve(item);
+		if (entry == null || !entry.sellable()) {
+			return ActionResult.fail("Bu item satilamaz.");
+		}
+		if (market.sell(player, item, quantity)) {
+			return ActionResult.ok(quantity + "x " + entry.displayName() + " satildi.");
+		}
+		return ActionResult.fail("Envanterde yeterli esya yok.");
+	}
+
+	public static ActionResult marketSellAllByItem(ServerPlayer player, String itemId, String commodityId) {
+		net.minecraft.world.item.Item item = resolveMarketItem(itemId, commodityId);
+		if (item == net.minecraft.world.item.Items.AIR) {
+			return ActionResult.fail("Gecersiz item.");
+		}
+		if (McEconomyMod.getEconomyManager().marketService().sellAll(player, item)) {
+			return ActionResult.ok("Tum " + com.mceconomy.market.ItemPriceHeuristic.displayName(item) + " satildi.");
+		}
+		return ActionResult.fail("Satilacak item yok.");
+	}
+
+	private static net.minecraft.world.item.Item resolveMarketItem(String itemId, String commodityId) {
+		if (itemId != null && !itemId.isBlank()) {
+			net.minecraft.world.item.Item item = McEconomyMod.getEconomyManager().playerBlackMarket().resolveItem(itemId);
+			if (item != net.minecraft.world.item.Items.AIR) {
+				return item;
+			}
+			return com.mceconomy.market.ItemPriceHeuristic.resolveItem(itemId);
+		}
 		Commodity commodity = Commodity.fromId(commodityId);
-		if (commodity == null) {
-			return ActionResult.fail("Geçersiz emtia.");
-		}
-		if (!commodity.sellable()) {
-			return ActionResult.fail(commodity.displayName() + " satılamaz.");
-		}
-		if (McEconomyMod.getEconomyManager().marketService().sell(player, commodity, quantity)) {
-			return ActionResult.ok(quantity + "x " + commodity.displayName() + " satıldı.");
-		}
-		return ActionResult.fail("Envanterde yeterli eşya yok.");
+		return commodity != null ? commodity.item() : net.minecraft.world.item.Items.AIR;
 	}
 
 	public static ActionResult loanTake(UUID uuid, long displayMc) {
@@ -404,9 +449,14 @@ public final class DashboardActionService {
 		return ActionResult.fail("Coin alınamadı (bakiye, arz veya kısıtlama).");
 	}
 
-	public static ActionResult fireEmployee(UUID uuid, long employeeId) {
-		if (McEconomyMod.getEconomyManager().workforceService().fireEmployee(uuid, employeeId)) {
+	public static ActionResult fireEmployee(UUID ownerUuid, long employeeId) {
+		var manager = McEconomyMod.getEconomyManager();
+		var server = manager.server();
+		if (manager.workforceService().fireEmployee(ownerUuid, employeeId)) {
 			return ActionResult.ok("Calisan isten cikarildi.");
+		}
+		if (server != null && manager.playerEmploymentService().fireEmployee(ownerUuid, employeeId, server)) {
+			return ActionResult.ok("Oyuncu calisani isten cikarildi.");
 		}
 		return ActionResult.fail("Calisan bulunamadi veya yetkiniz yok.");
 	}
@@ -416,10 +466,36 @@ public final class DashboardActionService {
 		if (mg <= 0) {
 			return ActionResult.fail("Geçersiz tutar.");
 		}
-		if (McEconomyMod.getEconomyManager().workforceService().raiseSalary(uuid, employeeId, mg)) {
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager.workforceService().raiseSalary(uuid, employeeId, mg)) {
 			return ActionResult.ok("Maas guncellendi: " + GoldStandard.formatMilligrams(mg));
 		}
+		if (manager.playerEmploymentService().raiseSalary(uuid, employeeId, mg)) {
+			return ActionResult.ok("Oyuncu maasi guncellendi: " + GoldStandard.formatMilligrams(mg));
+		}
 		return ActionResult.fail("Maas guncellenemedi.");
+	}
+
+	public static ActionResult collectCompanyStash(UUID uuid, String company) {
+		if (company == null || company.isBlank()) {
+			return ActionResult.fail("Sirket adi gerekli.");
+		}
+		var server = McEconomyMod.getEconomyManager().server();
+		ServerPlayer player = server != null ? server.getPlayerList().getPlayer(uuid) : null;
+		if (player == null) {
+			return ActionResult.fail("Depo toplamak icin oyunda cevrimici olmalisiniz.");
+		}
+		try {
+			var result = McEconomyMod.getEconomyManager().companyStashService()
+					.collectAll(uuid, company, player);
+			if (result.totalItems() <= 0) {
+				return ActionResult.fail("Depoda toplanacak urun yok veya envanter dolu.");
+			}
+			return ActionResult.ok("Depodan alindi: " + String.join(", ", result.lines()));
+		} catch (Exception e) {
+			McEconomyMod.LOGGER.error("Depo toplama", e);
+			return ActionResult.fail("Depo toplanamadi.");
+		}
 	}
 
 	public static ActionResult payBonus(UUID uuid, String company) {
@@ -556,11 +632,16 @@ public final class DashboardActionService {
 		return ActionResult.fail("Satış gerçekleştirilemedi.");
 	}
 
-	public static ActionResult createToken(UUID uuid, String symbol, String name, int supply, long priceMg) {
+	public static ActionResult createToken(UUID uuid, String symbol, String name, int supply, long displayMc) {
+		long priceMg = mgForDisplayMc(displayMc);
+		if (priceMg <= 0) {
+			return ActionResult.fail("Geçersiz başlangıç fiyatı.");
+		}
 		try {
 			if (McEconomyMod.getEconomyManager().exchangeService()
 					.createToken(uuid, symbol, name, supply, priceMg)) {
-				return ActionResult.ok("Coin oluşturuldu: " + symbol.toUpperCase());
+				return ActionResult.ok("Coin oluşturuldu: " + symbol.toUpperCase()
+						+ " @ " + GoldStandard.formatMilligrams(priceMg));
 			}
 		} catch (Exception e) {
 			return ActionResult.fail("Coin oluşturulamadı.");
@@ -602,18 +683,11 @@ public final class DashboardActionService {
 	}
 
 	public static ActionResult inventoryMarketSell(ServerPlayer player, String itemId, int quantity) {
-		var item = McEconomyMod.getEconomyManager().playerBlackMarket().resolveItem(itemId);
-		if (item == net.minecraft.world.item.Items.AIR) {
-			return ActionResult.fail("Gecersiz item.");
-		}
-		Commodity commodity = Commodity.fromItem(item);
-		if (commodity == null || !commodity.sellable()) {
-			return ActionResult.fail("Bu item markette satilamaz.");
-		}
-		if (McEconomyMod.getEconomyManager().marketService().sell(player, commodity, quantity)) {
-			return ActionResult.ok(quantity + "x " + commodity.displayName() + " markette satildi.");
-		}
-		return ActionResult.fail("Envanterde yeterli item yok.");
+		return marketSellByItem(player, itemId, null, quantity);
+	}
+
+	public static ActionResult inventoryMarketSellAll(ServerPlayer player, String itemId) {
+		return marketSellAllByItem(player, itemId, null);
 	}
 
 	public static ActionResult inventoryBlackMarketList(ServerPlayer player, String itemId, int quantity, long displayMc) {

@@ -95,7 +95,7 @@ function renderAlerts(alerts, withActions) {
   if (!alerts.length) return '<p class="hint">Uyarı yok.</p>';
   return alerts.map(a => `
     <div class="list-item">
-      <strong>#${a.id}</strong> ${a.playerName || a.playerUuid.slice(0,8)}
+      <strong>#${a.id}</strong> ${a.playerName || (a.playerUuid ? a.playerUuid.slice(0, 8) : '?')}
       — ${a.reason} | risk: ${a.riskScore} | ${formatMg(a.amountMg)}
       ${withActions ? `<button class="btn btn-sm btn-success" style="float:right" onclick="quickResolve('${a.playerName || ''}')">Çöz</button>` : ''}
     </div>`).join('');

@@ -47,10 +47,18 @@ public final class PropertyRepository {
 		}
 	}
 
-	public PlayerProperty insert(UUID owner, String tier, BlockPos origin, int y) throws SQLException {
+	/** Monoton artan arsa slotu — satis sonrasi tekrar kullanilmaz. */
+	public int nextPlotIndex() throws SQLException {
+		try (Statement stmt = connection.createStatement();
+			 ResultSet rs = stmt.executeQuery("SELECT COALESCE(MAX(plot_index), -1) + 1 FROM player_properties")) {
+			return rs.next() ? rs.getInt(1) : 0;
+		}
+	}
+
+	public PlayerProperty insert(UUID owner, String tier, BlockPos origin, int y, int plotIndex) throws SQLException {
 		try (PreparedStatement ps = connection.prepareStatement("""
-				INSERT INTO player_properties(owner_uuid, tier, origin_x, origin_y, origin_z, purchased_at)
-				VALUES(?, ?, ?, ?, ?, ?)
+				INSERT INTO player_properties(owner_uuid, tier, origin_x, origin_y, origin_z, purchased_at, plot_index)
+				VALUES(?, ?, ?, ?, ?, ?, ?)
 				""", Statement.RETURN_GENERATED_KEYS)) {
 			ps.setString(1, owner.toString());
 			ps.setString(2, tier);
@@ -58,10 +66,11 @@ public final class PropertyRepository {
 			ps.setInt(4, y);
 			ps.setInt(5, origin.getZ());
 			ps.setLong(6, System.currentTimeMillis());
+			ps.setInt(7, plotIndex);
 			ps.executeUpdate();
 			try (ResultSet keys = ps.getGeneratedKeys()) {
 				long id = keys.next() ? keys.getLong(1) : 0;
-				return new PlayerProperty(id, owner, tier, origin, y, System.currentTimeMillis());
+				return new PlayerProperty(id, owner, tier, origin, y, System.currentTimeMillis(), plotIndex);
 			}
 		}
 	}
@@ -83,12 +92,14 @@ public final class PropertyRepository {
 	}
 
 	private static PlayerProperty map(ResultSet rs) throws SQLException {
+		int plotIndex = rs.getInt("plot_index");
 		return new PlayerProperty(
 				rs.getLong("id"),
 				UUID.fromString(rs.getString("owner_uuid")),
 				rs.getString("tier"),
 				new BlockPos(rs.getInt("origin_x"), rs.getInt("origin_y"), rs.getInt("origin_z")),
 				rs.getInt("origin_y"),
-				rs.getLong("purchased_at"));
+				rs.getLong("purchased_at"),
+				plotIndex);
 	}
 }

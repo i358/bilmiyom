@@ -10,5 +10,10 @@ public record PlayerProperty(
 		String tier,
 		BlockPos origin,
 		int originY,
-		long purchasedAt) {
+		long purchasedAt,
+		int plotIndex) {
+
+	public PlayerProperty(long id, UUID ownerUuid, String tier, BlockPos origin, int originY, long purchasedAt) {
+		this(id, ownerUuid, tier, origin, originY, purchasedAt, (int) id);
+	}
 }

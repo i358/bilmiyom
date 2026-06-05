@@ -59,6 +59,9 @@ public final class PropertyService {
 				>= EconomyConfig.maxServerBuiltPlots()) {
 			return "Sunucu yapı limiti doldu.";
 		}
+		if (StructureBuildQueue.get().progressFor(owner) != null) {
+			return "Mevcut insaat tamamlanmadan yeni ev alinamaz.";
+		}
 		PropertyPlacer.Tier tier = PropertyPlacer.Tier.fromId(tierId);
 		long price = tier.priceMg();
 		if (!currencyService.withdraw(owner, price, TransactionType.MARKET_BUY)) {
@@ -69,12 +72,19 @@ public final class PropertyService {
 			taxService.collectTax(tax);
 		}
 		ServerLevel level = (ServerLevel) player.level();
-		BlockPos origin = PropertyPlacer.findBuildOrigin(level, properties.size());
-		PlayerProperty prop = repository.insert(owner, tier.name(), origin, origin.getY());
+		int plotIndex = repository.nextPlotIndex();
+		BlockPos origin = PropertyPlacer.findBuildOrigin(level, plotIndex);
+		PlayerProperty prop = repository.insert(owner, tier.name(), origin, origin.getY(), plotIndex);
+		String label = tier.name() + " evi";
+		boolean queued = StructureBuildQueue.get().enqueue(owner, prop.id(),
+				PropertyPlacer.placer(tier, origin, () -> {}), label);
+		if (!queued) {
+			repository.delete(prop.id());
+			currencyService.deposit(owner, price, TransactionType.MARKET_SELL);
+			return "Insaat kuyrugu dolu; odeme iade edildi.";
+		}
 		properties.put(prop.id(), prop);
 		byOwner.computeIfAbsent(owner, k -> new ArrayList<>()).add(prop.id());
-		String label = tier.name() + " evi";
-		StructureBuildQueue.get().enqueue(owner, PropertyPlacer.placer(tier, origin, () -> {}), label);
 		return "OK:" + prop.id();
 	}
 
@@ -93,12 +103,18 @@ public final class PropertyService {
 		if (p == null || !p.ownerUuid().equals(player.getUUID())) {
 			return "Ev bulunamadi.";
 		}
+		StructureBuildQueue.get().purgeForLinkedId(propertyId);
 		PropertyPlacer.Tier tier = PropertyPlacer.Tier.valueOf(p.tier());
 		long refund = (long) (tier.priceMg() * 0.5);
 		currencyService.deposit(player.getUUID(), refund, TransactionType.MARKET_SELL);
+		ServerLevel level = (ServerLevel) player.level();
+		PropertyPlacer.demolish(level, p.origin(), tier);
 		repository.delete(propertyId);
 		properties.remove(propertyId);
-		byOwner.getOrDefault(player.getUUID(), List.of()).remove(propertyId);
+		List<Long> owned = byOwner.get(player.getUUID());
+		if (owned != null) {
+			owned.remove(propertyId);
+		}
 		return "OK";
 	}
 

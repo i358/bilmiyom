@@ -242,6 +242,7 @@
             <input id="invPrice" type="number" min="1" value="10" class="hidden">
             <div class="form-row" style="margin-top:12px">
               <button class="btn btn-accent" id="invMarketSellBtn">Markette Sat</button>
+              <button class="btn btn-ghost" id="invMarketSellAllBtn">Tümünü Sat</button>
               <button class="btn btn-danger" id="invBmListBtn">Karaborsaya Koy</button>
             </div>
           </div>
@@ -358,6 +359,7 @@
               <label>Emtia</label><select id="marketSellSelect"></select>
               <label>Adet</label><input id="marketSellQty" type="number" min="1" value="1">
               <button class="btn btn-accent btn-block" id="marketSellBtn">Sat</button>
+              <button class="btn btn-ghost btn-block" id="marketSellAllBtn" style="margin-top:6px">Tümünü Sat</button>
             </div>
           </div>
         </section>
@@ -396,7 +398,7 @@
               <label>Sembol</label><input id="coinSymbol" placeholder="ABC" maxlength="6">
               <label>İsim</label><input id="coinName" placeholder="Coin adı">
               <label>Arz</label><input id="coinSupply" type="number" min="1" value="1000">
-              <label>Fiyat (MC, x1000)</label><input id="coinPriceMg" type="number" min="1" value="1000">
+              <label>Başlangıç fiyatı ($)</label><input id="coinPriceMg" type="number" min="1" value="10">
               <button class="btn btn-accent btn-block" id="coinCreateBtn">Oluştur</button>
             </div>
           </div>
@@ -622,7 +624,7 @@
         <section id="page-guild" class="page"><div class="panel-card"><h3>Lonca</h3><div id="guildPanel"></div></div></section>
         <section id="page-municipal" class="page"><div class="panel-card"><h3>Belediye</h3><div id="municipalPanel"></div></div></section>
         <section id="page-property" class="page"><div class="panel-card"><h3>Gayrimenkul</h3><p class="hint">Oyunda: /ev al cottage|house|villa</p><div id="propertyPanel"></div></div></section>
-        <section id="page-vehicle" class="page"><div class="panel-card"><h3>Garaj</h3><p class="hint">Client+server mod gerekir. /araba al sedan</p><div id="vehiclePanel"></div></div></section>
+        <section id="page-vehicle" class="page"><div class="panel-card"><h3>Garaj</h3><p class="hint">Client+server mod. /araba al sedan|suv → /araba cikar &lt;id&gt;</p><div id="vehiclePanel"></div></div></section>
         <section id="page-government" class="page"><div class="panel-card"><h3>Ekonomi Bakanlığı</h3><div id="governmentPanel"></div></div></section>
 
         <!-- APPEALS -->

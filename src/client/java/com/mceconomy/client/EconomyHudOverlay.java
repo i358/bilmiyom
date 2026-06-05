@@ -32,13 +32,16 @@ public final class EconomyHudOverlay {
 		String bank = GoldStandard.formatMilligrams(EconomyHudState.bankMg());
 		String status = EconomyHudState.frozen() ? "MASAK" :
 				(EconomyHudState.blacklisted() ? "KARA" : "OK");
-		String line1 = "Altin " + wallet + "  Banka " + bank;
+		String walletLine = "Cuzdan: " + wallet;
+		String bankLine = "Banka: " + bank;
 		String line2 = "Meslek: " + EconomyHudState.jobLabel() + "  Durum: " + status;
 		if (EconomyHudState.dirtyMg() > 0) {
 			line2 += "  Kara: " + GoldStandard.formatMilligrams(EconomyHudState.dirtyMg());
 		}
-		graphics.fill(x - 4, y - 4, x + 184, y + 22, 0x88000000);
-		graphics.text(client.font, line1, x, y, 0xFFFFFF);
-		graphics.text(client.font, line2, x, y + 10, 0xCCCCCC);
+		int boxW = Math.max(220, client.font.width(walletLine) + client.font.width(bankLine) + 24);
+		graphics.fill(x - 4, y - 4, x + boxW, y + 22, 0x88000000);
+		graphics.text(client.font, walletLine, x, y, 0xFFE8C547, false);
+		graphics.text(client.font, bankLine, x + client.font.width(walletLine) + 8, y, 0xFF88CCFF, false);
+		graphics.text(client.font, line2, x, y + 10, 0xFFCCCCCC, false);
 	}
 }

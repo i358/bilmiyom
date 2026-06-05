@@ -8,6 +8,7 @@
 	"license": "MIT",
 	"environment": "*",
 	"entrypoints": {
+		"main": ["com.mceconomy.McEconomyModInitializer"],
 		"client": ["com.mceconomy.McEconomyClientMod"],
 		"server": ["com.mceconomy.McEconomyServerMod"]
 	},

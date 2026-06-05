@@ -5,25 +5,13 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mceconomy.McEconomyMod;
-import com.mceconomy.appeal.Appeal;
-import com.mceconomy.justice.CitizenReport;
-import com.mceconomy.justice.PrisonSentence;
-import com.mceconomy.blackmarket.BlackMarketService;
-import com.mceconomy.blackmarket.IllegalGood;
 import com.mceconomy.company.Company;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.EconomyManager;
 import com.mceconomy.economy.GoldStandard;
-import com.mceconomy.event.EconomyEventType;
 import com.mceconomy.exchange.ExchangeToken;
-import com.mceconomy.job.JobType;
-import com.mceconomy.job.QuestManager;
 import com.mceconomy.market.Commodity;
-import com.mceconomy.market.CommodityState;
-import com.mceconomy.market.MarketService;
 import com.mceconomy.player.PlayerEconomyProfile;
-import com.mceconomy.privatebank.PrivateBank;
-import com.mceconomy.regulation.MasakAlert;
 import com.mceconomy.web.DashboardActionService.ActionResult;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -36,8 +24,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -218,13 +204,10 @@ public final class EconomyWebServer {
 			return;
 		}
 		UUID uuid = session.get().playerUuid();
-		JsonObject me = buildPortfolio(uuid);
+		var manager = McEconomyMod.getEconomyManager();
+		ServerPlayer player = manager.server() != null ? manager.server().getPlayerList().getPlayer(uuid) : null;
+		JsonObject me = DashboardDataService.buildMe(uuid, player);
 		me.addProperty("op", session.get().op());
-		var em = McEconomyMod.getEconomyManager();
-		var minister = em.economyMinisterService();
-		me.addProperty("isEconomyMinister", minister != null && minister.isMinister(uuid));
-		PlayerEconomyProfile prof = em.profiles().get(uuid);
-		me.addProperty("centralBankOfficial", prof != null && prof.centralBankOfficial());
 		sendJson(exchange, 200, me);
 	}
 
@@ -238,7 +221,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		sendJson(exchange, 200, buildCatalog());
+		sendJson(exchange, 200, DashboardDataService.buildCatalog());
 	}
 
 	private void handleWorkforce(HttpExchange exchange) throws IOException {
@@ -247,76 +230,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		UUID uuid = session.get().playerUuid();
-		EconomyManager manager = McEconomyMod.getEconomyManager();
-		JsonObject data = new JsonObject();
-		JsonArray companies = new JsonArray();
-		for (Company company : manager.companyManager().allCompanies()) {
-			if (!company.ownerUuid().equals(uuid)) {
-				continue;
-			}
-			JsonObject c = new JsonObject();
-			c.addProperty("name", company.name());
-			c.addProperty("treasury", GoldStandard.formatMilligrams(company.treasury()));
-			JsonArray emps = new JsonArray();
-			for (var e : manager.workforceService().employeesForOwner(uuid, company.name())) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", e.id());
-				row.addProperty("kind", "npc");
-				row.addProperty("name", e.npcName());
-				row.addProperty("role", e.roleId());
-				row.addProperty("salary", GoldStandard.formatMilligrams(e.salaryMg()));
-				row.addProperty("salaryMg", e.salaryMg());
-				row.addProperty("produced", GoldStandard.formatMilligrams(e.totalProducedMg()));
-				emps.add(row);
-			}
-			for (var e : manager.playerEmploymentService().employeesForOwner(uuid, company.name())) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", e.id());
-				row.addProperty("kind", "player");
-				row.addProperty("name", e.playerName());
-				row.addProperty("role", e.roleId());
-				row.addProperty("salary", GoldStandard.formatMilligrams(e.salaryMg()));
-				row.addProperty("salaryMg", e.salaryMg());
-				emps.add(row);
-			}
-			c.add("employees", emps);
-			JsonArray apps = new JsonArray();
-			for (var a : manager.workforceService().pendingForOwner(uuid, company.name())) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", a.id());
-				row.addProperty("kind", "npc");
-				row.addProperty("name", a.npcName());
-				row.addProperty("role", a.roleId());
-				row.addProperty("salary", GoldStandard.formatMilligrams(a.requestedSalaryMg()));
-				row.addProperty("message", a.message());
-				apps.add(row);
-			}
-			for (var a : manager.playerEmploymentService().pendingForOwner(uuid, company.name())) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", a.id());
-				row.addProperty("kind", "player");
-				row.addProperty("name", a.playerName());
-				row.addProperty("role", a.roleId());
-				row.addProperty("salary", GoldStandard.formatMilligrams(a.requestedSalaryMg()));
-				row.addProperty("message", a.message());
-				apps.add(row);
-			}
-			c.add("applications", apps);
-			JsonArray stash = new JsonArray();
-			for (var entry : manager.companyVaultService().listContents(company.id())) {
-				JsonObject row = new JsonObject();
-				row.addProperty("itemId", entry.itemId());
-				row.addProperty("name", entry.displayName());
-				row.addProperty("quantity", entry.quantity());
-				stash.add(row);
-			}
-			c.add("stash", stash);
-			c.addProperty("vaultReady", manager.companyVaultService().getVault(company.id()) != null);
-			companies.add(c);
-		}
-		data.add("companies", companies);
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildWorkforce(session.get().playerUuid()));
 	}
 
 	private void handleEmployment(HttpExchange exchange) throws IOException {
@@ -374,22 +288,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		UUID uuid = session.get().playerUuid();
-		JsonArray trades = new JsonArray();
-		for (var trade : McEconomyMod.getEconomyManager().playerTradeService().history(uuid)) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", trade.id());
-			row.addProperty("initiator", trade.initiatorName());
-			row.addProperty("partner", trade.partnerName());
-			row.addProperty("status", trade.status().name());
-			row.addProperty("initiatorGoldMg", trade.initiatorGoldMg());
-			row.addProperty("partnerGoldMg", trade.partnerGoldMg());
-			row.addProperty("completedAt", trade.completedAt());
-			trades.add(row);
-		}
-		JsonObject data = new JsonObject();
-		data.add("trades", trades);
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildTrades(session.get().playerUuid()));
 	}
 
 	private void handleInsurance(HttpExchange exchange) throws IOException {
@@ -398,21 +297,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		UUID uuid = session.get().playerUuid();
-		var ins = McEconomyMod.getEconomyManager().insuranceService();
-		JsonObject data = new JsonObject();
-		JsonArray policies = new JsonArray();
-		for (var p : ins.policiesFor(uuid)) {
-			JsonObject row = new JsonObject();
-			row.addProperty("type", p.type().name());
-			row.addProperty("companyId", p.companyId());
-			row.addProperty("premiumMg", p.monthlyPremiumMg());
-			row.addProperty("premium", GoldStandard.formatMilligrams(p.monthlyPremiumMg()));
-			row.addProperty("active", p.active());
-			policies.add(row);
-		}
-		data.add("policies", policies);
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildInsurance(session.get().playerUuid()));
 	}
 
 	private void handleGuild(HttpExchange exchange) throws IOException {
@@ -421,16 +306,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		var guild = McEconomyMod.getEconomyManager().guildService().guildForPlayer(session.get().playerUuid());
-		JsonObject data = new JsonObject();
-		if (guild.isPresent()) {
-			var g = guild.get();
-			data.addProperty("name", g.name());
-			data.addProperty("treasuryMg", g.treasuryMg());
-			data.addProperty("treasury", GoldStandard.formatMilligrams(g.treasuryMg()));
-			data.addProperty("strikeActive", g.strikeActive());
-		}
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildGuild(session.get().playerUuid()));
 	}
 
 	private void handleGovernment(HttpExchange exchange) throws IOException {
@@ -439,52 +315,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		UUID uuid = session.get().playerUuid();
-		var minister = McEconomyMod.getEconomyManager().economyMinisterService();
-		JsonObject data = new JsonObject();
-		data.addProperty("isMinister", minister != null && minister.isMinister(uuid));
-		data.addProperty("ministerCount", minister != null ? minister.ministerCount() : 0);
-		data.addProperty("requiredYesVotes", minister != null ? minister.requiredYesVotes() : 1);
-		JsonArray pending = new JsonArray();
-		JsonArray recent = new JsonArray();
-		if (minister != null) {
-			try {
-				for (var d : minister.pendingDecrees()) {
-					JsonObject row = new JsonObject();
-					row.addProperty("id", d.id());
-					row.addProperty("type", d.type());
-					row.addProperty("payloadJson", d.payloadJson());
-					row.addProperty("createdAt", d.createdAt());
-					row.addProperty("issuedBy", d.issuedBy());
-					int yes = 0;
-					JsonArray votes = new JsonArray();
-					for (var v : minister.votesForDecree(d.id())) {
-						if (v.yes()) {
-							yes++;
-						}
-						JsonObject vr = new JsonObject();
-						vr.addProperty("ministerUuid", v.ministerUuid().toString());
-						vr.addProperty("yes", v.yes());
-						votes.add(vr);
-					}
-					row.addProperty("yesVotes", yes);
-					row.add("votes", votes);
-					pending.add(row);
-				}
-				for (var d : minister.recentDecrees(12)) {
-					JsonObject row = new JsonObject();
-					row.addProperty("id", d.id());
-					row.addProperty("type", d.type());
-					row.addProperty("status", d.status());
-					row.addProperty("createdAt", d.createdAt());
-					recent.add(row);
-				}
-			} catch (Exception ignored) {
-			}
-		}
-		data.add("pendingDecrees", pending);
-		data.add("recentDecrees", recent);
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildGovernment(session.get().playerUuid()));
 	}
 
 	private void handleMunicipal(HttpExchange exchange) throws IOException {
@@ -493,21 +324,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		var mayor = McEconomyMod.getEconomyManager().mayorService();
-		JsonObject data = new JsonObject();
-		var mstate = mayor.state();
-		data.addProperty("mayorName", mstate.hasMayor() ? mstate.mayorName() : "—");
-		data.addProperty("budgetMg", McEconomyMod.getEconomyManager().centralBank().getMunicipalBudgetMg());
-		data.addProperty("budget", GoldStandard.formatMilligrams(
-				McEconomyMod.getEconomyManager().centralBank().getMunicipalBudgetMg()));
-		JsonArray candidates = new JsonArray();
-		for (var entry : mayor.electionCandidates().entrySet()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("name", entry.getValue());
-			candidates.add(row);
-		}
-		data.add("candidates", candidates);
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildMunicipal(session.get().playerUuid()));
 	}
 
 	private void handleAdminTradeDisputes(HttpExchange exchange) throws IOException {
@@ -542,40 +359,7 @@ public final class EconomyWebServer {
 		DashboardActionService.ActionResult result = runOnServer(() -> {
 			EconomyManager manager = McEconomyMod.getEconomyManager();
 			ServerPlayer player = manager.server() != null ? manager.server().getPlayerList().getPlayer(uuid) : null;
-			JsonObject data = new JsonObject();
-			JsonArray items = new JsonArray();
-			if (player == null) {
-				data.addProperty("online", false);
-				data.add("items", items);
-				return DashboardActionService.ActionResult.ok("offline", data);
-			}
-			data.addProperty("online", true);
-			java.util.Map<String, JsonObject> aggregated = new java.util.LinkedHashMap<>();
-			var inv = player.getInventory();
-			for (int i = 0; i < inv.getContainerSize(); i++) {
-				var stack = inv.getItem(i);
-				if (stack.isEmpty()) {
-					continue;
-				}
-				String itemId = net.minecraft.core.registries.BuiltInRegistries.ITEM
-						.getKey(stack.getItem()).toString();
-				JsonObject row = aggregated.get(itemId);
-				if (row == null) {
-					row = new JsonObject();
-					row.addProperty("itemId", itemId);
-					row.addProperty("name", stack.getHoverName().getString());
-					row.addProperty("count", 0);
-					com.mceconomy.market.Commodity commodity = com.mceconomy.market.Commodity.fromItem(stack.getItem());
-					if (commodity != null && commodity.sellable()) {
-						row.addProperty("commodityId", commodity.id());
-					}
-					aggregated.put(itemId, row);
-				}
-				row.addProperty("count", row.get("count").getAsInt() + stack.getCount());
-			}
-			aggregated.values().forEach(items::add);
-			data.add("items", items);
-			return DashboardActionService.ActionResult.ok("ok", data);
+			return DashboardActionService.ActionResult.ok("ok", DashboardDataService.buildInventory(player));
 		});
 		sendJson(exchange, 200, result.data() != null ? result.data() : new JsonObject());
 	}
@@ -599,104 +383,8 @@ public final class EconomyWebServer {
 	}
 
 	private ActionResult dispatchPlayerAction(UUID uuid, String action, JsonObject body) {
-		return switch (action) {
-			case "pay" -> DashboardActionService.pay(uuid, text(body, "target"), displayMcVal(body, 0));
-			case "bank/open-checking" -> DashboardActionService.bankOpenChecking(uuid);
-			case "bank/open-term" -> DashboardActionService.bankOpenTerm(uuid);
-			case "bank/transfer" -> DashboardActionService.bankTransfer(uuid, text(body, "target"), displayMcVal(body, 0));
-			case "bank/wallet-deposit" -> DashboardActionService.bankWalletDeposit(uuid, displayMcVal(body, 0));
-			case "bank/wallet-withdraw" -> DashboardActionService.bankWalletWithdraw(uuid, displayMcVal(body, 0));
-			case "bank/deposit-ingots" -> withOnline(uuid, p -> DashboardActionService.bankDepositIngots(p, intVal(body, "ingots", 0)));
-			case "bank/withdraw-ingots" -> withOnline(uuid, p -> DashboardActionService.bankWithdrawIngots(p, intVal(body, "ingots", 0)));
-			case "market/buy" -> withOnline(uuid, p -> DashboardActionService.marketBuy(p, text(body, "commodity"), intVal(body, "quantity", 0)));
-			case "market/sell" -> withOnline(uuid, p -> DashboardActionService.marketSell(p, text(body, "commodity"), intVal(body, "quantity", 0)));
-			case "loan/take" -> DashboardActionService.loanTake(uuid, displayMcVal(body, 0));
-			case "loan/pay" -> DashboardActionService.loanPay(uuid);
-			case "job/set" -> DashboardActionService.setJob(uuid, text(body, "job"));
-			case "job/resign" -> DashboardActionService.resignJob(uuid);
-			case "quest/assign" -> withOnline(uuid, DashboardActionService::assignQuest);
-			case "quest/complete" -> withOnline(uuid, DashboardActionService::completeQuest);
-			case "quest/cancel" -> DashboardActionService.cancelQuest(uuid);
-			case "company/create" -> DashboardActionService.createCompany(uuid, text(body, "name"));
-			case "shares/buy" -> DashboardActionService.buyShares(uuid, text(body, "company"), intVal(body, "amount", 0));
-			case "shares/sell" -> DashboardActionService.sellShares(uuid, text(body, "company"), intVal(body, "amount", 0));
-			case "shares/sell-all" -> DashboardActionService.sellAllShares(uuid);
-			case "exchange/token/sell-all" -> DashboardActionService.sellAllTokens(uuid);
-			case "exchange/token/buy" -> DashboardActionService.buyToken(uuid, text(body, "symbol"), intVal(body, "amount", 0));
-			case "exchange/token/sell" -> DashboardActionService.sellToken(uuid, text(body, "symbol"), intVal(body, "amount", 0));
-			case "exchange/token/create" -> DashboardActionService.createToken(uuid, text(body, "symbol"), text(body, "name"),
-					intVal(body, "supply", 0), longVal(body, "priceMg", 0));
-			case "exchange/list" -> DashboardActionService.listCompany(uuid, text(body, "company"), text(body, "ticker"));
-			case "exchange/delist" -> DashboardActionService.delistCompany(uuid, text(body, "company"));
-			case "exchange/leverage/open" -> DashboardActionService.openLeverage(uuid, text(body, "symbol"),
-					"long".equalsIgnoreCase(text(body, "side")), intVal(body, "leverage", 2), displayMcVal(body, 0));
-			case "exchange/leverage/close" -> DashboardActionService.closeLeverage(uuid, intVal(body, "positionId", -1));
-			case "casino/play" -> DashboardActionService.casinoPlay(uuid, text(body, "game"), displayMcVal(body, 0), text(body, "choice"));
-			case "company/employee/fire" -> DashboardActionService.fireEmployee(uuid, longVal(body, "employeeId", -1));
-			case "company/employee/raise" -> DashboardActionService.raiseSalary(uuid, longVal(body, "employeeId", -1), displayMcVal(body, 0));
-			case "company/employee/bonus" -> DashboardActionService.payBonus(uuid, text(body, "company"));
-			case "company/stash/collect" -> DashboardActionService.teleportCompanyVault(uuid, text(body, "company"));
-			case "company/vault/teleport" -> DashboardActionService.teleportCompanyVault(uuid, text(body, "company"));
-			case "company/vault/exit" -> DashboardActionService.exitCompanyVault(uuid);
-			case "company/application/accept" -> DashboardActionService.acceptApplication(uuid, longVal(body, "applicationId", -1));
-			case "company/application/reject" -> DashboardActionService.rejectApplication(uuid, longVal(body, "applicationId", -1));
-			case "vault/teleport" -> withOnline(uuid, DashboardActionService::teleportVault);
-			case "vault/back" -> withOnline(uuid, DashboardActionService::vaultBack);
-			case "inventory/market-sell" -> withOnline(uuid, p -> DashboardActionService.inventoryMarketSell(
-					p, text(body, "itemId"), intVal(body, "quantity", 0)));
-			case "inventory/blackmarket-list" -> withOnline(uuid, p -> DashboardActionService.inventoryBlackMarketList(
-					p, text(body, "itemId"), intVal(body, "quantity", 0), displayMcVal(body, 0)));
-			case "heist/start" -> withOnline(uuid, DashboardActionService::startHeist);
-			case "private-bank/certify" -> DashboardActionService.purchaseCert(uuid);
-			case "private-bank/open" -> DashboardActionService.openPrivateBank(uuid, text(body, "name"));
-			case "private-bank/deposit" -> DashboardActionService.privateDeposit(uuid, text(body, "bank"), displayMcVal(body, 0));
-			case "private-bank/withdraw" -> DashboardActionService.privateWithdraw(uuid, text(body, "bank"), displayMcVal(body, 0));
-			case "appeal/submit" -> {
-				Long alertId = body.has("alertId") && !body.get("alertId").isJsonNull()
-						? body.get("alertId").getAsLong() : null;
-				PlayerEconomyProfile profile = McEconomyMod.getEconomyManager().profiles().get(uuid);
-				yield DashboardActionService.submitAppeal(uuid, profile != null ? profile.name() : "?", text(body, "subject"), text(body, "message"), alertId);
-			}
-			case "justice/complaint" -> {
-				PlayerEconomyProfile profile = McEconomyMod.getEconomyManager().profiles().get(uuid);
-				yield DashboardActionService.submitComplaint(uuid, profile != null ? profile.name() : "?",
-						text(body, "target"), text(body, "category"), text(body, "subject"), text(body, "message"));
-			}
-			case "justice/tipoff" -> {
-				PlayerEconomyProfile profile = McEconomyMod.getEconomyManager().profiles().get(uuid);
-				yield DashboardActionService.submitTipOff(uuid, profile != null ? profile.name() : "?",
-						text(body, "target"), text(body, "category"), text(body, "message"));
-			}
-			case "blackmarket/buy" -> withOnline(uuid, p -> DashboardActionService.blackMarketBuy(p, text(body, "good"), intVal(body, "quantity", 0)));
-			case "blackmarket/sell" -> withOnline(uuid, p -> DashboardActionService.blackMarketSell(p, text(body, "good"), intVal(body, "quantity", 0)));
-			case "launder" -> withOnline(uuid, p -> DashboardActionService.launder(p, displayMcVal(body, 0)));
-			case "employment/apply" -> DashboardActionService.employmentApply(uuid, text(body, "company"),
-					text(body, "role"), longVal(body, "salaryMg", 0));
-			case "employment/cancel-application" -> DashboardActionService.employmentCancelApplication(uuid);
-			case "employment/quit" -> DashboardActionService.employmentQuit(uuid);
-			case "trade/invite" -> withOnline(uuid, p -> DashboardActionService.tradeInvite(uuid, text(body, "target")));
-			case "trade/accept" -> DashboardActionService.tradeAccept(uuid);
-			case "trade/dispute" -> DashboardActionService.tradeDispute(uuid, longVal(body, "tradeId", 0),
-					text(body, "reason"));
-			case "insurance/personal/subscribe" -> DashboardActionService.insurancePersonal(uuid, true);
-			case "insurance/personal/cancel" -> DashboardActionService.insurancePersonal(uuid, false);
-			case "insurance/company/subscribe" -> DashboardActionService.insuranceCompany(uuid, text(body, "company"), true);
-			case "insurance/company/cancel" -> DashboardActionService.insuranceCompany(uuid, text(body, "company"), false);
-			case "guild/create" -> DashboardActionService.guildCreate(uuid, text(body, "name"));
-			case "guild/join" -> DashboardActionService.guildJoin(uuid, text(body, "name"));
-			case "guild/leave" -> DashboardActionService.guildLeave(uuid);
-			case "guild/deposit" -> DashboardActionService.guildDeposit(uuid, displayMcVal(body, 0));
-			case "guild/withdraw" -> DashboardActionService.guildWithdraw(uuid, displayMcVal(body, 0));
-			case "guild/strike" -> DashboardActionService.guildStrike(uuid, intVal(body, "minutes", 30));
-			case "guild/bargain" -> DashboardActionService.guildBargain(uuid, text(body, "message"));
-			case "municipal/candidate" -> DashboardActionService.municipalCandidate(uuid);
-			case "municipal/vote" -> DashboardActionService.municipalVote(uuid, text(body, "candidate"));
-			case "municipal/spend" -> DashboardActionService.municipalSpend(uuid, displayMcVal(body, 0), text(body, "purpose"));
-			case "government/decree/propose" -> DashboardActionService.proposeDecree(uuid, text(body, "type"), text(body, "payloadJson"));
-			case "government/decree/vote" -> DashboardActionService.voteDecree(uuid, longVal(body, "decreeId", 0),
-					body.has("yes") && body.get("yes").getAsBoolean());
-			default -> ActionResult.fail("Bilinmeyen işlem: " + action);
-		};
+		return EconomyPlayerActionDispatcher.dispatch(uuid, DashboardActionService.onlinePlayer(uuid), action,
+				body == null ? "{}" : body.toString());
 	}
 
 	private void handleAdminAction(HttpExchange exchange) throws IOException {
@@ -718,79 +406,7 @@ public final class EconomyWebServer {
 	}
 
 	private ActionResult dispatchAdminAction(String action, JsonObject body, String adminName) {
-		return switch (action) {
-			case "blackmarket/add" -> DashboardActionService.addCustomBlackMarket(text(body, "name"), text(body, "itemId"), displayMcVal(body, 0));
-			case "blackmarket/remove" -> DashboardActionService.removeCustomBlackMarket(text(body, "id"));
-			case "masak/resolve" -> DashboardActionService.masakResolve(text(body, "player"));
-			case "masak/fine" -> DashboardActionService.masakFine(text(body, "player"), displayMcVal(body, 0));
-			case "masak/blacklist" -> DashboardActionService.masakBlacklist(text(body, "player"));
-			case "event/trigger" -> DashboardActionService.triggerEvent(text(body, "type"),
-					intVal(body, "durationSeconds", 300) * 1000L);
-			case "mbop/grant" -> DashboardActionService.mbopGrant(text(body, "player"));
-			case "mbop/revoke" -> DashboardActionService.mbopRevoke(text(body, "player"));
-			case "central-bank/rebuild" -> DashboardActionService.rebuildCentralBank();
-			case "justice/investigate" -> DashboardActionService.justiceInvestigate(longVal(body, "id", -1));
-			case "justice/dismiss" -> DashboardActionService.justiceDismiss(longVal(body, "id", -1), text(body, "note"));
-			case "justice/guilty" -> DashboardActionService.justiceGuilty(longVal(body, "id", -1), text(body, "note"),
-					intVal(body, "prisonMinutes", 0), adminName != null ? adminName : "Dashboard OP");
-			case "justice/prison/imprison" -> DashboardActionService.justiceImprison(text(body, "player"),
-					intVal(body, "minutes", 5), text(body, "reason"), adminName != null ? adminName : "Dashboard OP");
-			case "justice/prison/release" -> DashboardActionService.justiceReleasePrison(text(body, "player"));
-			case "trade/dispute/refund" -> DashboardActionService.tradeDisputeResolve(adminName,
-					longVal(body, "id", -1), true, text(body, "note"));
-			case "trade/dispute/dismiss" -> DashboardActionService.tradeDisputeResolve(adminName,
-					longVal(body, "id", -1), false, text(body, "note"));
-			case "player/wallet/set" -> AdminEconomyService.walletSet(text(body, "player"), text(body, "uuid"),
-					displayMcVal(body, 0));
-			case "player/wallet/adjust" -> AdminEconomyService.walletAdjust(text(body, "player"), text(body, "uuid"),
-					displayMcVal(body, 0));
-			case "player/dirty/set" -> AdminEconomyService.dirtySet(text(body, "player"), text(body, "uuid"),
-					displayMcVal(body, 0));
-			case "player/bank/set" -> AdminEconomyService.bankSet(text(body, "player"), text(body, "uuid"),
-					text(body, "type"), displayMcVal(body, 0));
-			case "player/bank/open-checking" -> AdminEconomyService.bankOpenChecking(text(body, "player"),
-					text(body, "uuid"));
-			case "player/bank/open-term" -> AdminEconomyService.bankOpenTerm(text(body, "player"), text(body, "uuid"));
-			case "player/bank/delete" -> AdminEconomyService.bankDelete(text(body, "player"), text(body, "uuid"),
-					text(body, "type"));
-			case "player/profile/update" -> AdminEconomyService.profileUpdate(text(body, "player"), text(body, "uuid"),
-					body);
-			case "player/loan/upsert" -> AdminEconomyService.loanUpsert(text(body, "player"), text(body, "uuid"),
-					displayMcVal(body, 0), displayMcVal(body, "installmentMc", 0), longVal(body, "dueAt", 0));
-			case "player/loan/delete" -> AdminEconomyService.loanDelete(text(body, "player"), text(body, "uuid"));
-			case "player/shares/set" -> AdminEconomyService.sharesSet(text(body, "player"), text(body, "uuid"),
-					text(body, "ticker"), intVal(body, "amount", 0));
-			case "player/tokens/set" -> AdminEconomyService.tokensSet(text(body, "player"), text(body, "uuid"),
-					text(body, "symbol"), intVal(body, "amount", 0));
-			case "player/leverage/close" -> AdminEconomyService.leverageClose(intVal(body, "positionId", -1));
-			case "player/private-deposit/set" -> AdminEconomyService.privateDepositSet(text(body, "player"),
-					text(body, "uuid"), text(body, "bankName"), displayMcVal(body, 0));
-			case "economy/central-bank/update" -> AdminEconomyService.centralBankUpdate(body);
-			case "economy/company/create" -> AdminEconomyService.companyCreate(text(body, "name"),
-					text(body, "owner"), text(body, "ticker"), displayMcVal(body, "treasuryMc", 0),
-					body.has("listed") && body.get("listed").getAsBoolean());
-			case "economy/company/update" -> AdminEconomyService.companyUpdate(text(body, "name"),
-					body.has("treasuryMc") ? displayMcVal(body, "treasuryMc", 0) : null,
-					text(body, "ticker"), body.has("listed") ? body.get("listed").getAsBoolean() : null);
-			case "economy/company/delist" -> AdminEconomyService.companyDelist(text(body, "name"));
-			case "economy/token/create" -> AdminEconomyService.tokenCreate(text(body, "symbol"),
-					text(body, "displayName"), intVal(body, "supply", 0), displayMcVal(body, "priceMc", 0));
-			case "economy/token/update" -> AdminEconomyService.tokenUpdate(text(body, "symbol"),
-					body.has("priceMc") ? displayMcVal(body, "priceMc", 0) : null,
-					body.has("circulating") ? intVal(body, "circulating", 0) : null);
-			case "economy/token/delete" -> AdminEconomyService.tokenDelete(text(body, "symbol"));
-			case "config/save" -> AdminEconomyService.configSave(text(body, "json"));
-			case "economy/full-reset" -> fullEconomyReset();
-			default -> ActionResult.fail("Bilinmeyen admin işlemi: " + action);
-		};
-	}
-
-	private ActionResult withOnline(UUID uuid, java.util.function.Function<ServerPlayer, ActionResult> action) {
-		ServerPlayer player = DashboardActionService.onlinePlayer(uuid);
-		if (player == null) {
-			return ActionResult.fail("Bu işlem için oyunda çevrimiçi olmalısınız.");
-		}
-		return action.apply(player);
+		return EconomyAdminActionDispatcher.dispatch(action, body, adminName, sessionManager::clearAll);
 	}
 
 	private void handleAdminReport(HttpExchange exchange) throws IOException {
@@ -818,25 +434,8 @@ public final class EconomyWebServer {
 			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
 			return;
 		}
-		var manager = McEconomyMod.getEconomyManager();
-		JsonArray players = new JsonArray();
-		for (PlayerEconomyProfile profile : manager.profiles().values()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("name", profile.name());
-			row.addProperty("uuid", profile.uuid().toString());
-			row.addProperty("walletMg", manager.currencyService().getBalance(profile.uuid()));
-			row.addProperty("bankMg", manager.bankService().getBankBalanceMg(profile.uuid()));
-			row.addProperty("dirtyMg", manager.currencyService().getDirtyBalance(profile.uuid()));
-			row.addProperty("creditScore", profile.creditScore().score());
-			row.addProperty("frozen", profile.accountFrozen());
-			row.addProperty("blacklisted", profile.blacklisted());
-			row.addProperty("mbOfficial", profile.centralBankOfficial());
-			row.addProperty("online", DashboardActionService.onlinePlayer(profile.uuid()) != null);
-			players.add(row);
-		}
-		JsonObject wrapper = new JsonObject();
-		wrapper.add("players", players);
-		sendJson(exchange, 200, wrapper);
+		String search = queryParam(exchange.getRequestURI().getQuery(), "search");
+		sendJson(exchange, 200, DashboardDataService.buildAdminPlayers(search));
 	}
 
 	private void handleAdminPlayer(HttpExchange exchange) throws IOException {
@@ -871,7 +470,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 400, error("invalid", "name veya uuid gerekli"));
 			return;
 		}
-		JsonObject detail = buildAdminPlayerDetail(uuid);
+		JsonObject detail = DashboardDataService.buildAdminPlayerDetail(uuid);
 		if (!detail.has("name")) {
 			sendJson(exchange, 404, error("not_found", "Oyuncu bulunamadı"));
 			return;
@@ -889,12 +488,12 @@ public final class EconomyWebServer {
 			sendJson(exchange, 405, error("method", "GET gerekli"));
 			return;
 		}
-		ActionResult result = AdminEconomyService.configRead();
-		if (!result.success()) {
-			sendJson(exchange, 400, result.toJson());
+		JsonObject data = DashboardDataService.buildAdminConfig();
+		if (data.has("error")) {
+			sendJson(exchange, 400, data);
 			return;
 		}
-		sendJson(exchange, 200, result.data());
+		sendJson(exchange, 200, data);
 	}
 
 	private void handleAdminEconomyCatalog(HttpExchange exchange) throws IOException {
@@ -907,58 +506,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
 			return;
 		}
-		var manager = McEconomyMod.getEconomyManager();
-		double index = manager.marketService().economyIndex().calculate();
-		JsonObject data = new JsonObject();
-
-		JsonArray companies = new JsonArray();
-		for (Company company : manager.companyManager().allCompanies()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("name", company.name());
-			row.addProperty("ticker", company.ticker());
-			row.addProperty("listed", company.listedOnExchange());
-			row.addProperty("treasuryMg", company.treasury());
-			row.addProperty("treasury", GoldStandard.formatMilligrams(company.treasury()));
-			row.addProperty("sharePriceMg", company.sharePrice(index));
-			row.addProperty("ownerUuid", company.ownerUuid().toString());
-			companies.add(row);
-		}
-		data.add("companies", companies);
-
-		JsonArray tokens = new JsonArray();
-		for (ExchangeToken token : manager.exchangeService().allTokens()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("symbol", token.symbol());
-			row.addProperty("displayName", token.displayName());
-			row.addProperty("priceMg", token.priceMg());
-			row.addProperty("circulating", token.circulating());
-			row.addProperty("totalSupply", token.totalSupply());
-			tokens.add(row);
-		}
-		data.add("tokens", tokens);
-
-		JsonArray privateBanks = new JsonArray();
-		for (PrivateBank bank : manager.privateBankService().allBanks()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("name", bank.name());
-			privateBanks.add(row);
-		}
-		data.add("privateBanks", privateBanks);
-
-		var cb = manager.centralBank();
-		if (cb != null) {
-			JsonObject macro = new JsonObject();
-			macro.addProperty("baseRate", cb.getBaseRate());
-			macro.addProperty("inflationRate", cb.getInflationRate());
-			macro.addProperty("economyIndex", cb.getEconomyIndex());
-			macro.addProperty("goldFactor", cb.getGoldFactor());
-			macro.addProperty("moneySupply", cb.getMoneySupply());
-			macro.addProperty("municipalBudgetMg", cb.getMunicipalBudgetMg());
-			macro.addProperty("municipalBudgetMc", cb.getMunicipalBudgetMg() / 1000.0);
-			addFiatMacro(macro, cb);
-			data.add("centralBank", macro);
-		}
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildAdminEconomyCatalog());
 	}
 
 	private static String queryParam(String query, String key) {
@@ -975,128 +523,6 @@ public final class EconomyWebServer {
 			}
 		}
 		return null;
-	}
-
-	private JsonObject buildCatalog() {
-		var manager = McEconomyMod.getEconomyManager();
-		double index = manager.marketService().economyIndex().calculate();
-		JsonObject catalog = new JsonObject();
-
-		JsonArray jobs = new JsonArray();
-		for (JobType job : JobType.values()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", job.id());
-			row.addProperty("name", job.displayName());
-			jobs.add(row);
-		}
-		catalog.add("jobs", jobs);
-
-		JsonArray commodities = new JsonArray();
-		for (Commodity commodity : Commodity.values()) {
-			if (!commodity.sellable() && !commodity.buyable()) {
-				continue;
-			}
-			JsonObject row = new JsonObject();
-			row.addProperty("id", commodity.id());
-			row.addProperty("name", commodity.displayName());
-			long priceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
-			row.addProperty("priceMg", priceMg);
-			row.addProperty("buyable", commodity.buyable());
-			row.addProperty("sellable", commodity.sellable());
-			enrichCommodityRow(row, manager.marketService(), commodity, priceMg);
-			commodities.add(row);
-		}
-		catalog.add("commodities", commodities);
-
-		JsonArray companies = new JsonArray();
-		for (Company company : manager.companyManager().allCompanies()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("name", company.name());
-			row.addProperty("ticker", company.ticker() != null ? company.ticker() : "");
-			row.addProperty("listed", company.listedOnExchange());
-			row.addProperty("sharePriceMg", company.sharePrice(index));
-			row.addProperty("treasury", company.treasury());
-			companies.add(row);
-		}
-		catalog.add("companies", companies);
-
-		JsonArray tokens = new JsonArray();
-		for (ExchangeToken token : manager.exchangeService().allTokens()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("symbol", token.symbol());
-			row.addProperty("name", token.displayName());
-			row.addProperty("priceMg", token.priceMg());
-			row.addProperty("circulating", token.circulating());
-			row.addProperty("supply", token.totalSupply());
-			tokens.add(row);
-		}
-		catalog.add("tokens", tokens);
-
-		JsonArray privateBanks = new JsonArray();
-		for (PrivateBank bank : manager.privateBankService().allBanks()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("name", bank.name());
-			privateBanks.add(row);
-		}
-		catalog.add("privateBanks", privateBanks);
-
-		JsonArray illegalGoods = new JsonArray();
-		BlackMarketService bm = manager.blackMarketService();
-		for (IllegalGood good : IllegalGood.tradable()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", good.id());
-			row.addProperty("name", good.displayName());
-			row.addProperty("sellPriceMg", bm.getSellPrice(good));
-			row.addProperty("buyPriceMg", bm.getBuyPrice(good));
-			illegalGoods.add(row);
-		}
-		if (manager.customBlackMarket() != null) {
-			for (var good : manager.customBlackMarket().all()) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", good.id());
-				row.addProperty("name", "★ " + good.displayName());
-				row.addProperty("sellPriceMg", (long) (good.priceMg() * EconomyConfig.blackMarketSellMultiplier()));
-				row.addProperty("buyPriceMg", (long) (good.priceMg() * EconomyConfig.blackMarketBuyPremium()));
-				illegalGoods.add(row);
-			}
-		}
-		if (manager.playerBlackMarket() != null) {
-			for (var listing : manager.playerBlackMarket().all()) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", listing.catalogId());
-				row.addProperty("name", "🛒 " + listing.displayName() + " (" + listing.sellerName() + " x" + listing.stock() + ")");
-				row.addProperty("sellPriceMg", (long) (listing.priceMg() * EconomyConfig.blackMarketSellMultiplier()));
-				row.addProperty("buyPriceMg", (long) (listing.priceMg() * EconomyConfig.blackMarketBuyPremium()));
-				row.addProperty("playerListing", true);
-				illegalGoods.add(row);
-			}
-		}
-		catalog.add("illegalGoods", illegalGoods);
-
-		JsonArray events = new JsonArray();
-		for (EconomyEventType type : EconomyEventType.values()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", type.id());
-			row.addProperty("name", type.name());
-			events.add(row);
-		}
-		catalog.add("events", events);
-		return catalog;
-	}
-
-	private ActionResult fullEconomyReset() {
-		return runOnServer(() -> {
-			try {
-				var report = com.mceconomy.world.ModWorldResetService.fullEconomyReset(
-						McEconomyMod.getEconomyManager().server(), null);
-				sessionManager.clearAll();
-				return ActionResult.ok("Tam sifirlama: DB="
-						+ (report.databaseWiped() ? "OK" : "HATA")
-						+ ", MB yenilendi. Tum web oturumlari kapatildi.");
-			} catch (Exception e) {
-				return ActionResult.fail(e.getMessage());
-			}
-		});
 	}
 
 	private ActionResult runOnServer(Supplier<ActionResult> action) {
@@ -1144,7 +570,7 @@ public final class EconomyWebServer {
 			}
 		}
 		var manager = McEconomyMod.getEconomyManager();
-		JsonArray history = loadHistory(type, symbol, 48);
+		JsonArray history = DashboardDataService.loadHistory(type, symbol, 48);
 		JsonObject response = new JsonObject();
 		response.addProperty("symbol", symbol);
 		response.addProperty("type", type);
@@ -1154,7 +580,7 @@ public final class EconomyWebServer {
 			Commodity commodity = Commodity.fromId(symbol);
 			if (commodity != null) {
 				currentPriceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
-				enrichCommodityRow(response, manager.marketService(), commodity, currentPriceMg);
+				DashboardDataService.enrichCommodityRow(response, manager.marketService(), commodity, currentPriceMg);
 			}
 		} else if ("TOKEN".equals(type)) {
 			for (ExchangeToken token : manager.exchangeService().allTokens()) {
@@ -1174,7 +600,7 @@ public final class EconomyWebServer {
 		}
 		if (currentPriceMg > 0) {
 			response.addProperty("priceMg", currentPriceMg);
-			response.addProperty("changeBps", priceChangeBps(history, currentPriceMg));
+			response.addProperty("changeBps", DashboardDataService.priceChangeBps(history, currentPriceMg));
 		}
 		sendJson(exchange, 200, response);
 	}
@@ -1202,37 +628,7 @@ public final class EconomyWebServer {
 				}
 			}
 		}
-		var manager = McEconomyMod.getEconomyManager();
-		JsonArray items = new JsonArray();
-		if (manager != null && manager.bulletinService() != null) {
-			var bulletins = category != null && !category.isBlank()
-					? manager.bulletinService().recentByCategory(category, limit)
-					: manager.bulletinService().recent(limit);
-			for (var bulletin : bulletins) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", bulletin.id());
-				row.addProperty("category", bulletin.category());
-				row.addProperty("categoryLabel", categoryLabel(bulletin.category()));
-				row.addProperty("headline", bulletin.headline());
-				row.addProperty("body", bulletin.body());
-				row.addProperty("valueMg", bulletin.valueMg());
-				row.addProperty("value", GoldStandard.formatMilligrams(bulletin.valueMg()));
-				row.addProperty("createdAt", bulletin.createdAt());
-				items.add(row);
-			}
-		}
-		JsonObject data = new JsonObject();
-		data.add("bulletins", items);
-		sendJson(exchange, 200, data);
-	}
-
-	private static String categoryLabel(String category) {
-		return switch (category) {
-			case "ROBBERY" -> "SOYGUN";
-			case "STORAGE" -> "DEPO";
-			case "MACRO" -> "MAKRO";
-			default -> category;
-		};
+		sendJson(exchange, 200, DashboardDataService.buildBulletins(category, limit));
 	}
 
 	private void handleWorldMap(HttpExchange exchange) throws IOException {
@@ -1252,7 +648,7 @@ public final class EconomyWebServer {
 			}
 		}
 		WebSession s = session.get();
-		sendJson(exchange, 200, WorldMapService.buildMapData(s.playerUuid(), s.op(), track));
+		sendJson(exchange, 200, DashboardDataService.buildWorldMap(s.playerUuid(), s.op(), track));
 	}
 
 	private void handleAdminSecurityCameras(HttpExchange exchange) throws IOException {
@@ -1282,58 +678,24 @@ public final class EconomyWebServer {
 				}
 			}
 		}
-		var manager = McEconomyMod.getEconomyManager();
-		JsonObject data = new JsonObject();
-		if (manager == null || manager.securityCameraService() == null) {
-			data.add("logs", new JsonArray());
-			data.add("nights", new JsonArray());
-			sendJson(exchange, 200, data);
-			return;
+		int nightIndex = -1;
+		if (night != null && !night.isBlank()) {
+			try {
+				nightIndex = Integer.parseInt(night);
+			} catch (NumberFormatException ignored) {
+				var manager = McEconomyMod.getEconomyManager();
+				if (manager != null && manager.securityCameraService() != null) {
+					try {
+						nightIndex = manager.securityCameraService().listNights().indexOf(night);
+					} catch (java.sql.SQLException ignoredSql) {
+						nightIndex = -1;
+					}
+				}
+			}
 		}
-		try {
-			JsonArray nights = new JsonArray();
-			for (String key : manager.securityCameraService().listNights()) {
-				nights.add(key);
-			}
-			data.add("nights", nights);
-			data.addProperty("currentNight", manager.securityCameraService().currentNightKey());
-			JsonArray logs = new JsonArray();
-			for (var log : manager.securityCameraService().loadLogs(night, limit)) {
-				JsonObject row = new JsonObject();
-				row.addProperty("id", log.id());
-				row.addProperty("nightKey", log.nightKey());
-				row.addProperty("playerUuid", log.playerUuid().toString());
-				row.addProperty("playerName", log.playerName());
-				row.addProperty("x", log.x());
-				row.addProperty("y", log.y());
-				row.addProperty("z", log.z());
-				row.addProperty("recordedAt", log.recordedAt());
-				logs.add(row);
-			}
-			data.add("logs", logs);
-			JsonArray replay = new JsonArray();
-			String replayNight = night != null && !night.isBlank() ? night : manager.securityCameraService().currentNightKey();
-			if (replayNight == null || replayNight.isBlank()) {
-				var nightKeys = manager.securityCameraService().listNights();
-				if (!nightKeys.isEmpty()) {
-					replayNight = nightKeys.get(0);
-				}
-			}
-			if (replayNight != null && !replayNight.isBlank()) {
-				for (var log : manager.securityCameraService().loadReplayForNight(replayNight, 4000)) {
-					JsonObject row = new JsonObject();
-					row.addProperty("playerUuid", log.playerUuid().toString());
-					row.addProperty("playerName", log.playerName());
-					row.addProperty("x", log.x());
-					row.addProperty("y", log.y());
-					row.addProperty("z", log.z());
-					row.addProperty("recordedAt", log.recordedAt());
-					replay.add(row);
-				}
-			}
-			data.add("replay", replay);
-		} catch (java.sql.SQLException e) {
-			sendJson(exchange, 500, error("db", "Kamera kayitlari yuklenemedi"));
+		JsonObject data = DashboardDataService.buildAdminSecurityCameras(nightIndex, limit);
+		if (data.has("error")) {
+			sendJson(exchange, 500, error("db", data.get("error").getAsString()));
 			return;
 		}
 		sendJson(exchange, 200, data);
@@ -1345,70 +707,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		var manager = McEconomyMod.getEconomyManager();
-		var market = manager.marketService();
-		JsonObject data = new JsonObject();
-		double economyIndex = market.economyIndex().calculate();
-		long indexScaledMg = (long) (economyIndex * 1000);
-		JsonArray indexHistory = loadHistory("INDEX", "economy", 48);
-		data.addProperty("economyIndex", economyIndex);
-		data.addProperty("economyIndexChangeBps", priceChangeBps(indexHistory, indexScaledMg));
-		data.add("indexHistory", indexHistory);
-
-		JsonArray commodities = new JsonArray();
-		for (Commodity commodity : Commodity.values()) {
-			if (!commodity.sellable()) {
-				continue;
-			}
-			JsonObject row = new JsonObject();
-			row.addProperty("id", commodity.id());
-			row.addProperty("name", commodity.displayName());
-			long priceMg = market.priceEngine().getUnitPrice(commodity);
-			row.addProperty("priceMg", priceMg);
-			row.addProperty("category", commodity.jobCategory().name());
-			enrichCommodityRow(row, market, commodity, priceMg);
-			commodities.add(row);
-		}
-		data.add("commodities", commodities);
-
-		JsonArray tokens = new JsonArray();
-		for (ExchangeToken token : manager.exchangeService().allTokens()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("symbol", token.symbol());
-			row.addProperty("name", token.displayName());
-			long priceMg = token.priceMg();
-			row.addProperty("priceMg", priceMg);
-			JsonArray tokenHist = loadHistory("TOKEN", token.symbol(), 24);
-			row.add("history", tokenHist);
-			row.addProperty("changeBps", priceChangeBps(tokenHist, priceMg));
-			tokens.add(row);
-		}
-		data.add("tokens", tokens);
-
-		JsonArray topCommodityHistories = new JsonArray();
-		int count = 0;
-		for (Commodity commodity : Commodity.values()) {
-			if (!commodity.sellable() || count >= 5) {
-				continue;
-			}
-			JsonObject row = new JsonObject();
-			row.addProperty("id", commodity.id());
-			row.addProperty("name", commodity.displayName());
-			row.add("history", loadHistory("COMMODITY", commodity.id(), 24));
-			topCommodityHistories.add(row);
-			count++;
-		}
-		data.add("topHistories", topCommodityHistories);
-		data.addProperty("municipalBudgetMg", manager.centralBank().getMunicipalBudgetMg());
-		data.addProperty("municipalBudget", GoldStandard.formatMilligrams(manager.centralBank().getMunicipalBudgetMg()));
-		data.add("inflationHistory", loadHistory("MACRO", "inflation", 48));
-		data.add("goldReserveHistory", loadHistory("MACRO", "gold_reserve", 48));
-		data.add("municipalHistory", loadHistory("MACRO", "municipal_budget", 48));
-		data.add("fiatStrengthHistory", loadHistory("MACRO", "fiat_strength", 48));
-		if (manager.centralBank() != null) {
-			addFiatMacro(data, manager.centralBank());
-		}
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildChartsOverview(session.get().playerUuid()));
 	}
 
 	private void handleChartsPortfolio(HttpExchange exchange) throws IOException {
@@ -1417,130 +716,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
 			return;
 		}
-		UUID uuid = session.get().playerUuid();
-		var manager = McEconomyMod.getEconomyManager();
-		double index = manager.marketService().economyIndex().calculate();
-		JsonArray holdings = new JsonArray();
-
-		for (ExchangeToken token : manager.exchangeService().allTokens()) {
-			int amount = manager.exchangeService().tokenBalance(uuid, token);
-			if (amount <= 0) {
-				continue;
-			}
-			JsonObject row = portfolioHoldingRow("TOKEN", token.symbol(), token.displayName(),
-					amount, token.priceMg(), loadHistory("TOKEN", token.symbol(), 60));
-			holdings.add(row);
-		}
-		for (Company company : manager.companyManager().allCompanies()) {
-			int amount = manager.companyManager().getShareCount(uuid, company);
-			if (amount <= 0) {
-				continue;
-			}
-			String symbol = company.ticker() != null ? company.ticker() : company.name();
-			long priceMg = company.sharePrice(index);
-			JsonArray history = company.listedOnExchange() && company.ticker() != null
-					? loadHistory("SHARE", company.ticker(), 60)
-					: new JsonArray();
-			JsonObject row = portfolioHoldingRow("SHARE", symbol, company.name(), amount, priceMg, history);
-			holdings.add(row);
-		}
-		for (var pos : manager.leverageService().positionsOf(uuid)) {
-			holdings.add(portfolioLeverageRow(pos, loadHistory("TOKEN", pos.symbol(), 60)));
-		}
-		JsonObject data = new JsonObject();
-		data.add("holdings", holdings);
-		data.addProperty("economyIndex", index);
-		data.addProperty("updatedAt", System.currentTimeMillis());
-		sendJson(exchange, 200, data);
-	}
-
-	private JsonObject portfolioHoldingRow(String kind, String symbol, String name, int amount,
-			long priceMg, JsonArray history) {
-		JsonObject row = new JsonObject();
-		row.addProperty("kind", kind);
-		row.addProperty("symbol", symbol);
-		row.addProperty("name", name);
-		row.addProperty("amount", amount);
-		row.addProperty("priceMg", priceMg);
-		row.addProperty("valueMg", priceMg * amount);
-		row.add("history", history);
-		row.addProperty("changeBps", priceChangeBps(history, priceMg));
-		return row;
-	}
-
-	private JsonObject portfolioLeverageRow(com.mceconomy.exchange.LeverageService.PositionView pos,
-			JsonArray history) {
-		JsonObject row = new JsonObject();
-		row.addProperty("kind", "LEVERAGE");
-		row.addProperty("positionId", pos.id());
-		row.addProperty("symbol", pos.symbol());
-		row.addProperty("name", pos.symbol());
-		row.addProperty("side", pos.isLong() ? "LONG" : "SHORT");
-		row.addProperty("leverage", pos.leverage());
-		row.addProperty("amount", 1);
-		row.addProperty("entryPriceMg", pos.entryPriceMg());
-		row.addProperty("priceMg", pos.currentPriceMg());
-		row.addProperty("marginMg", pos.marginMg());
-		row.addProperty("pnlMg", pos.pnlMg());
-		row.addProperty("equityMg", pos.equityMg());
-		row.addProperty("valueMg", pos.equityMg());
-		row.add("history", history);
-		row.addProperty("changeBps", priceChangeBps(history, pos.currentPriceMg()));
-		return row;
-	}
-
-	private static void addFiatMacro(JsonObject data, com.mceconomy.tax.CentralBank cb) {
-		data.addProperty("fiatStrength", cb.getFiatStrength());
-		data.addProperty("goldBackingPct", Math.round(cb.getGoldBackingScore() * 1000) / 10.0);
-		data.addProperty("stateCredibilityPct", Math.round(cb.getStateCredibilityScore() * 1000) / 10.0);
-		data.addProperty("investmentPct", Math.round(cb.getInvestmentScore() * 1000) / 10.0);
-		data.addProperty("fiatShockPenalty", cb.getFiatShockPenalty());
-	}
-
-	private void enrichCommodityRow(JsonObject row, MarketService market, Commodity commodity, long priceMg) {
-		CommodityState state = market.commodityState(commodity);
-		if (state == null) {
-			return;
-		}
-		row.addProperty("supplyIndex", state.supplyIndex());
-		row.addProperty("demandIndex", state.demandIndex());
-		double flow = state.supplyIndex() + state.demandIndex();
-		if (flow > 0) {
-			row.addProperty("supplySharePct", Math.round(state.supplyIndex() / flow * 1000) / 10.0);
-			row.addProperty("demandSharePct", Math.round(state.demandIndex() / flow * 1000) / 10.0);
-		} else {
-			row.addProperty("supplySharePct", 50.0);
-			row.addProperty("demandSharePct", 50.0);
-		}
-		JsonArray hist = loadHistory("COMMODITY", commodity.id(), 24);
-		row.addProperty("changeBps", priceChangeBps(hist, priceMg));
-	}
-
-	/** Gecmis penceresinde en eski fiyat -> guncel fiyat (basis points). */
-	private static long priceChangeBps(JsonArray history, long currentPriceMg) {
-		if (history == null || history.isEmpty() || currentPriceMg <= 0) {
-			return 0;
-		}
-		long oldestPrice = history.get(0).getAsJsonObject().get("priceMg").getAsLong();
-		if (oldestPrice <= 0) {
-			return 0;
-		}
-		return Math.round((currentPriceMg - oldestPrice) * 10000.0 / oldestPrice);
-	}
-
-	private JsonArray loadHistory(String type, String symbol, int limit) {
-		JsonArray history = new JsonArray();
-		try {
-			for (Map<String, Object> row : McEconomyMod.getEconomyManager().priceHistoryRepository().loadRecent(type, symbol, limit)) {
-				JsonObject point = new JsonObject();
-				point.addProperty("priceMg", ((Number) row.get("priceMg")).longValue());
-				point.addProperty("recordedAt", ((Number) row.get("recordedAt")).longValue());
-				history.add(point);
-			}
-		} catch (Exception e) {
-			McEconomyMod.LOGGER.error("Fiyat geçmişi okunamadı: {} {}", type, symbol, e);
-		}
-		return history;
+		sendJson(exchange, 200, DashboardDataService.buildChartsPortfolio(session.get().playerUuid()));
 	}
 
 	private void handleAppealAccept(HttpExchange exchange) throws IOException {
@@ -1601,74 +777,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
 			return;
 		}
-		var manager = McEconomyMod.getEconomyManager();
-		JsonObject data = new JsonObject();
-		data.addProperty("playerCount", manager.profiles().size());
-		JsonArray alerts = new JsonArray();
-		for (MasakAlert alert : manager.masakService().openAlerts()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", alert.id());
-			row.addProperty("playerUuid", alert.playerUuid().toString());
-			row.addProperty("reason", alert.reason());
-			row.addProperty("riskScore", alert.riskScore());
-			row.addProperty("amountMg", alert.amount());
-			String playerName = manager.profiles().containsKey(alert.playerUuid())
-					? manager.profiles().get(alert.playerUuid()).name() : alert.playerUuid().toString().substring(0, 8);
-			row.addProperty("playerName", playerName);
-			alerts.add(row);
-		}
-		data.add("masakAlerts", alerts);
-		JsonArray appeals = new JsonArray();
-		for (Appeal appeal : manager.appealService().openAppeals()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", appeal.id());
-			row.addProperty("playerName", appeal.playerName());
-			row.addProperty("subject", appeal.subject());
-			row.addProperty("message", appeal.message());
-			if (appeal.relatedAlertId() != null) {
-				row.addProperty("relatedAlertId", appeal.relatedAlertId());
-			}
-			appeals.add(row);
-		}
-		data.add("openAppeals", appeals);
-
-		JsonArray citizenReports = new JsonArray();
-		for (CitizenReport report : manager.reportService().openReports()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", report.id());
-			row.addProperty("type", report.type().name());
-			row.addProperty("typeLabel", report.type().displayName());
-			row.addProperty("status", report.status().name());
-			row.addProperty("reporterName", report.reporterName());
-			row.addProperty("targetName", report.targetName());
-			row.addProperty("category", report.category());
-			row.addProperty("subject", report.subject());
-			row.addProperty("message", report.message());
-			citizenReports.add(row);
-		}
-		data.add("openReports", citizenReports);
-		data.addProperty("openReportCount", citizenReports.size());
-
-		JsonArray prisoners = new JsonArray();
-		for (PrisonSentence s : manager.prisonService().activeSentences()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("playerName", s.playerName());
-			row.addProperty("reason", s.reason());
-			row.addProperty("remainingMs", s.remainingMs());
-			row.addProperty("sentencedBy", s.sentencedBy());
-			prisoners.add(row);
-		}
-		data.add("activePrisoners", prisoners);
-		data.addProperty("prisonerCount", prisoners.size());
-
-		JsonArray mbOfficials = new JsonArray();
-		for (PlayerEconomyProfile profile : manager.profiles().values()) {
-			if (profile.centralBankOfficial()) {
-				mbOfficials.add(profile.name());
-			}
-		}
-		data.add("mbOfficials", mbOfficials);
-		sendJson(exchange, 200, data);
+		sendJson(exchange, 200, DashboardDataService.buildAdminOverview());
 	}
 
 	private void handleAdminAppeals(HttpExchange exchange) throws IOException {
@@ -1676,19 +785,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
 			return;
 		}
-		JsonArray appeals = new JsonArray();
-		for (Appeal appeal : McEconomyMod.getEconomyManager().appealService().openAppeals()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", appeal.id());
-			row.addProperty("playerName", appeal.playerName());
-			row.addProperty("subject", appeal.subject());
-			row.addProperty("message", appeal.message());
-			row.addProperty("relatedAlertId", appeal.relatedAlertId());
-			appeals.add(row);
-		}
-		JsonObject wrapper = new JsonObject();
-		wrapper.add("appeals", appeals);
-		sendJson(exchange, 200, wrapper);
+		sendJson(exchange, 200, DashboardDataService.buildAdminAppeals());
 	}
 
 	private void handleAdminJusticeReports(HttpExchange exchange) throws IOException {
@@ -1696,23 +793,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
 			return;
 		}
-		JsonArray reports = new JsonArray();
-		for (CitizenReport report : McEconomyMod.getEconomyManager().reportService().openReports()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", report.id());
-			row.addProperty("type", report.type().name());
-			row.addProperty("typeLabel", report.type().displayName());
-			row.addProperty("status", report.status().name());
-			row.addProperty("reporterName", report.reporterName());
-			row.addProperty("targetName", report.targetName());
-			row.addProperty("category", report.category());
-			row.addProperty("subject", report.subject());
-			row.addProperty("message", report.message());
-			reports.add(row);
-		}
-		JsonObject wrapper = new JsonObject();
-		wrapper.add("reports", reports);
-		sendJson(exchange, 200, wrapper);
+		sendJson(exchange, 200, DashboardDataService.buildAdminJusticeReports());
 	}
 
 	private void handleAdminJusticePrison(HttpExchange exchange) throws IOException {
@@ -1720,277 +801,7 @@ public final class EconomyWebServer {
 			sendJson(exchange, 403, error("forbidden", "Yalnızca sunucu OP erişebilir"));
 			return;
 		}
-		JsonArray prisoners = new JsonArray();
-		for (PrisonSentence s : McEconomyMod.getEconomyManager().prisonService().activeSentences()) {
-			JsonObject row = new JsonObject();
-			row.addProperty("playerName", s.playerName());
-			row.addProperty("reason", s.reason());
-			row.addProperty("remainingMs", s.remainingMs());
-			row.addProperty("sentencedBy", s.sentencedBy());
-			prisoners.add(row);
-		}
-		JsonObject wrapper = new JsonObject();
-		wrapper.add("prisoners", prisoners);
-		sendJson(exchange, 200, wrapper);
-	}
-
-	private JsonObject buildPortfolio(UUID uuid) {
-		var manager = McEconomyMod.getEconomyManager();
-		PlayerEconomyProfile profile = manager.profiles().get(uuid);
-		JsonObject data = new JsonObject();
-		if (profile == null) {
-			return data;
-		}
-		long wallet = manager.currencyService().getBalance(uuid);
-		long bank = manager.bankService().getBankBalanceMg(uuid);
-		long dirty = manager.currencyService().getDirtyBalance(uuid);
-		data.addProperty("name", profile.name());
-		data.addProperty("walletMg", wallet);
-		data.addProperty("wallet", GoldStandard.formatMilligrams(wallet));
-		data.addProperty("bankMg", bank);
-		data.addProperty("bank", GoldStandard.formatMilligrams(bank));
-		data.addProperty("dirtyMg", dirty);
-		data.addProperty("dirty", GoldStandard.formatMilligrams(dirty));
-		data.addProperty("totalMg", wallet + bank);
-		data.addProperty("creditScore", profile.creditScore().score());
-		data.addProperty("job", profile.jobType() != null ? profile.jobType().displayName() : "Yok");
-		data.addProperty("jobId", profile.jobType() != null ? profile.jobType().id() : "");
-		data.addProperty("accountFrozen", profile.accountFrozen());
-		data.addProperty("blacklisted", profile.blacklisted());
-		data.addProperty("bankCertified", profile.bankCertified());
-		data.addProperty("hasChecking", manager.bankService().getChecking(uuid).isPresent());
-		data.addProperty("canUseLegal", profile.canUseLegalEconomy());
-		data.addProperty("online", DashboardActionService.onlinePlayer(uuid) != null);
-		data.addProperty("economyIndex", manager.marketService().economyIndex().calculate());
-		data.addProperty("goldFactor", GoldStandard.goldFactor());
-		data.addProperty("ingotPrice", GoldStandard.formatMilligrams(Math.round(GoldStandard.ingotPriceMc() * 1000)));
-		data.addProperty("inflationRate", manager.centralBank() != null ? manager.centralBank().getInflationRate() : 0);
-		if (manager.centralBank() != null) {
-			var cb = manager.centralBank();
-			data.addProperty("municipalBudgetMg", cb.getMunicipalBudgetMg());
-			data.addProperty("municipalBudget", GoldStandard.formatMilligrams(cb.getMunicipalBudgetMg()));
-			addFiatMacro(data, cb);
-		}
-		data.addProperty("certCostMg", com.mceconomy.config.EconomyConfig.bankCertificateCostMg());
-		data.addProperty("certCost", GoldStandard.formatMilligrams(com.mceconomy.config.EconomyConfig.bankCertificateCostMg()));
-		if (manager.goldReserveService() != null) {
-			data.addProperty("reserveGoldBlocks", manager.goldReserveService().cachedGoldBlocks());
-			data.addProperty("reserveBacking", GoldStandard.formatMilligrams(manager.goldReserveService().backingMilligrams()));
-		}
-
-		manager.loanManager().getLoan(uuid).ifPresent(loan -> {
-			JsonObject loanObj = new JsonObject();
-			loanObj.addProperty("remainingMg", loan.remaining());
-			loanObj.addProperty("remaining", GoldStandard.formatMilligrams(loan.remaining()));
-			loanObj.addProperty("installmentMg", loan.installment());
-			loanObj.addProperty("installment", GoldStandard.formatMilligrams(loan.installment()));
-			data.add("loan", loanObj);
-		});
-
-		QuestManager.ActiveQuest quest = manager.questManager().getQuest(uuid);
-		if (quest != null) {
-			JsonObject questObj = new JsonObject();
-			questObj.addProperty("title", quest.title());
-			questObj.addProperty("progress", quest.progress());
-			questObj.addProperty("required", quest.required());
-			questObj.addProperty("reward", GoldStandard.formatMilligrams(quest.reward()));
-			questObj.addProperty("companyQuest", quest.isCompanyQuest());
-			data.add("quest", questObj);
-		}
-
-		JsonArray shares = new JsonArray();
-		double index = manager.marketService().economyIndex().calculate();
-		for (Company company : manager.companyManager().allCompanies()) {
-			int amount = manager.companyManager().getShareCount(uuid, company);
-			if (amount > 0) {
-				JsonObject row = new JsonObject();
-				row.addProperty("ticker", company.ticker() != null ? company.ticker() : company.name());
-				row.addProperty("name", company.name());
-				row.addProperty("amount", amount);
-				row.addProperty("priceMg", company.sharePrice(index));
-				shares.add(row);
-			}
-		}
-		data.add("shares", shares);
-
-		JsonArray tokens = new JsonArray();
-		for (ExchangeToken token : manager.exchangeService().allTokens()) {
-			int amount = manager.exchangeService().tokenBalance(uuid, token);
-			if (amount > 0) {
-				JsonObject row = new JsonObject();
-				row.addProperty("symbol", token.symbol());
-				row.addProperty("amount", amount);
-				row.addProperty("priceMg", token.priceMg());
-				tokens.add(row);
-			}
-		}
-		data.add("tokens", tokens);
-
-		manager.playerEmploymentService().employmentForPlayer(uuid).ifPresent(emp -> {
-			Company company = manager.companyManager().allCompanies().stream()
-					.filter(c -> c.id() == emp.companyId()).findFirst().orElse(null);
-			JsonObject job = new JsonObject();
-			job.addProperty("company", company != null ? company.name() : "?");
-			job.addProperty("role", emp.roleId());
-			job.addProperty("salary", GoldStandard.formatMilligrams(emp.salaryMg()));
-			job.addProperty("salaryMg", emp.salaryMg());
-			job.addProperty("nextPayMs", emp.lastPaidAt() + com.mceconomy.config.EconomyConfig.playerDailySalaryIntervalMs());
-			data.add("employment", job);
-		});
-
-		JsonArray leveragePositions = new JsonArray();
-		for (var pos : manager.leverageService().positionsOf(uuid)) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", pos.id());
-			row.addProperty("symbol", pos.symbol());
-			row.addProperty("side", pos.isLong() ? "LONG" : "SHORT");
-			row.addProperty("leverage", pos.leverage());
-			row.addProperty("margin", GoldStandard.formatMilligrams(pos.marginMg()));
-			row.addProperty("entryPriceMg", pos.entryPriceMg());
-			row.addProperty("currentPriceMg", pos.currentPriceMg());
-			row.addProperty("pnl", (pos.pnlMg() >= 0 ? "+" : "") + GoldStandard.formatMilligrams(pos.pnlMg()));
-			row.addProperty("equity", GoldStandard.formatMilligrams(pos.equityMg()));
-			leveragePositions.add(row);
-		}
-		data.add("leveragePositions", leveragePositions);
-
-		JsonArray privateDeposits = new JsonArray();
-		for (PrivateBank privateBank : manager.privateBankService().allBanks()) {
-			long dep = manager.privateBankService().customerBalance(uuid, privateBank);
-			if (dep > 0) {
-				JsonObject row = new JsonObject();
-				row.addProperty("bank", privateBank.name());
-				row.addProperty("balanceMg", dep);
-				row.addProperty("balance", GoldStandard.formatMilligrams(dep));
-				privateDeposits.add(row);
-			}
-		}
-		data.add("privateDeposits", privateDeposits);
-
-		JsonArray appeals = new JsonArray();
-		for (Appeal appeal : manager.appealService().playerAppeals(uuid)) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", appeal.id());
-			row.addProperty("status", appeal.status().name());
-			row.addProperty("subject", appeal.subject());
-			row.addProperty("message", appeal.message());
-			appeals.add(row);
-		}
-		data.add("appeals", appeals);
-
-		if (manager.prisonService().isJailed(uuid)) {
-			manager.prisonService().sentenceFor(uuid).ifPresent(s -> {
-				JsonObject prison = new JsonObject();
-				prison.addProperty("reason", s.reason());
-				prison.addProperty("remainingMs", s.remainingMs());
-				prison.addProperty("releaseAt", s.releaseAt());
-				data.add("prison", prison);
-			});
-		}
-
-		JsonArray myReports = new JsonArray();
-		for (CitizenReport report : manager.reportService().reporterHistory(uuid)) {
-			JsonObject row = new JsonObject();
-			row.addProperty("id", report.id());
-			row.addProperty("type", report.type().displayName());
-			row.addProperty("status", report.status().name());
-			row.addProperty("targetName", report.targetName());
-			row.addProperty("subject", report.subject());
-			myReports.add(row);
-		}
-		data.add("myReports", myReports);
-
-		JsonArray market = new JsonArray();
-		for (Commodity commodity : Commodity.values()) {
-			if (!commodity.sellable()) {
-				continue;
-			}
-			JsonObject row = new JsonObject();
-			row.addProperty("id", commodity.id());
-			row.addProperty("name", commodity.displayName());
-			long priceMg = manager.marketService().priceEngine().getUnitPrice(commodity);
-			row.addProperty("priceMg", priceMg);
-			enrichCommodityRow(row, manager.marketService(), commodity, priceMg);
-			market.add(row);
-		}
-		data.add("market", market);
-		return data;
-	}
-
-	private JsonObject buildAdminPlayerDetail(UUID uuid) {
-		JsonObject data = buildPortfolio(uuid);
-		if (!data.has("name")) {
-			return data;
-		}
-		var manager = McEconomyMod.getEconomyManager();
-		data.addProperty("uuid", uuid.toString());
-
-		manager.bankService().getTerm(uuid).ifPresent(term -> {
-			data.addProperty("hasTerm", true);
-			data.addProperty("termBalanceMg", term.balance());
-			data.addProperty("termBalance", GoldStandard.formatMilligrams(term.balance()));
-			data.addProperty("termInterestRate", term.interestRate());
-			data.addProperty("termMaturesAt", term.maturesAt());
-		});
-		if (!data.has("hasTerm")) {
-			data.addProperty("hasTerm", false);
-			data.addProperty("termBalanceMg", 0);
-		}
-
-		manager.loanManager().getLoan(uuid).ifPresent(loan -> {
-			if (data.has("loan")) {
-				data.getAsJsonObject("loan").addProperty("dueAt", loan.dueAt());
-				data.getAsJsonObject("loan").addProperty("interestRate", loan.interestRate());
-			}
-		});
-
-		JsonArray allPrivateDeposits = new JsonArray();
-		for (PrivateBank bank : manager.privateBankService().allBanks()) {
-			long dep = manager.privateBankService().customerBalance(uuid, bank);
-			JsonObject row = new JsonObject();
-			row.addProperty("bank", bank.name());
-			row.addProperty("balanceMg", dep);
-			row.addProperty("balance", GoldStandard.formatMilligrams(dep));
-			allPrivateDeposits.add(row);
-		}
-		data.add("allPrivateDeposits", allPrivateDeposits);
-
-		JsonArray allShares = new JsonArray();
-		double index = manager.marketService().economyIndex().calculate();
-		for (Company company : manager.companyManager().allCompanies()) {
-			int amount = manager.companyManager().getShareCount(uuid, company);
-			if (amount <= 0) {
-				continue;
-			}
-			JsonObject row = new JsonObject();
-			row.addProperty("ticker", company.ticker() != null ? company.ticker() : company.name());
-			row.addProperty("name", company.name());
-			row.addProperty("amount", amount);
-			row.addProperty("priceMg", company.sharePrice(index));
-			allShares.add(row);
-		}
-		data.add("allShares", allShares);
-
-		JsonArray allTokens = new JsonArray();
-		for (ExchangeToken token : manager.exchangeService().allTokens()) {
-			int amount = manager.exchangeService().tokenBalance(uuid, token);
-			if (amount <= 0) {
-				continue;
-			}
-			JsonObject row = new JsonObject();
-			row.addProperty("symbol", token.symbol());
-			row.addProperty("displayName", token.displayName());
-			row.addProperty("amount", amount);
-			row.addProperty("priceMg", token.priceMg());
-			allTokens.add(row);
-		}
-		data.add("allTokens", allTokens);
-
-		PlayerEconomyProfile adminProfile = manager.profiles().get(uuid);
-		if (adminProfile != null) {
-			data.addProperty("mbOfficial", adminProfile.centralBankOfficial());
-		}
-		return data;
+		sendJson(exchange, 200, DashboardDataService.buildAdminJusticePrison());
 	}
 
 	private Optional<WebSession> requireSession(HttpExchange exchange) {

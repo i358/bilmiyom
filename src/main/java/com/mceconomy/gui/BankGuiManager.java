@@ -1,6 +1,7 @@
 package com.mceconomy.gui;
 
 import com.mceconomy.McEconomyMod;
+import com.mceconomy.panel.EconomyPanelService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.PhysicalGoldService;
 import com.mceconomy.market.Commodity;
@@ -100,10 +101,16 @@ public final class BankGuiManager {
 					if (requireLegal(sp)) openIngotMenu(sp, false);
 				}
 				case SLOT_SELL -> {
-					if (requireLegal(sp)) openSellMenu(sp);
+					if (requireLegal(sp)) {
+						sp.closeContainer();
+						EconomyPanelService.openPanel(sp, "market");
+					}
 				}
 				case SLOT_BUY -> {
-					if (requireLegalSpending(sp)) openBuyMenu(sp);
+					if (requireLegalSpending(sp)) {
+						sp.closeContainer();
+						EconomyPanelService.openPanel(sp, "market");
+					}
 				}
 				case SLOT_WALLET_TO_BANK -> {
 					if (requireLegalSpending(sp)) openWalletTransferMenu(sp, true);
@@ -111,9 +118,15 @@ public final class BankGuiManager {
 				case SLOT_BANK_TO_WALLET -> {
 					if (requireLegal(sp)) openWalletTransferMenu(sp, false);
 				}
-				case SLOT_ILLEGAL -> IllegalGuiManager.openHub(sp);
+				case SLOT_ILLEGAL -> {
+					sp.closeContainer();
+					EconomyPanelService.openPanel(sp, "illegal");
+				}
 				case SLOT_EXCHANGE -> {
-					if (requireLegalSpending(sp)) ExchangeGuiManager.openHub(sp);
+					if (requireLegalSpending(sp)) {
+						sp.closeContainer();
+						EconomyPanelService.openPanel(sp, "exchange");
+					}
 				}
 				case SLOT_PRIVATE_BANK -> {
 					if (requireLegalSpending(sp)) PrivateBankGuiManager.openHub(sp);

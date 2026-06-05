@@ -13,7 +13,8 @@ public record VehicleStatePayload(
 		double z,
 		float yaw,
 		double speed,
-		double fuel
+		double fuel,
+		String model
 ) implements CustomPacketPayload {
 	public static final CustomPacketPayload.Type<VehicleStatePayload> TYPE =
 			new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(McEconomyMod.MOD_ID, "vehicle_state"));
@@ -25,6 +26,7 @@ public record VehicleStatePayload(
 			ByteBufCodecs.FLOAT, VehicleStatePayload::yaw,
 			ByteBufCodecs.DOUBLE, VehicleStatePayload::speed,
 			ByteBufCodecs.DOUBLE, VehicleStatePayload::fuel,
+			ByteBufCodecs.STRING_UTF8, VehicleStatePayload::model,
 			VehicleStatePayload::new
 	);
 

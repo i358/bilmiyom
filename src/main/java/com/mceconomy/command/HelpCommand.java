@@ -62,7 +62,9 @@ public final class HelpCommand {
 		return List.of(
 				line("§e/bakiye [oyuncu] §7— Cüzdan, banka ve toplam servet"),
 				line("§e/ode <oyuncu> <miktar> §7— Oyuncuya altın gönder (mg birimi)"),
-				line("§e/banka §7— Merkez Bankası GUI (hesap, külçe, market)"),
+				line("§e/ekonomi §7— Oyun içi ekonomi paneli (pazar, envanter, banka)"),
+				line("§c[OP] /ekonomi admin §7— OP denetim paneli (oyun içi)"),
+				line("§e/banka §7— Ekonomi paneli banka sekmesi"),
 				line("§e/market fiyat §7— Canlı emtia fiyatları"),
 				line("§e/kredi al|ode|durum §7— Banka kredisi"),
 				line("§e/panel sifre <sifre> §7— Web dashboard şifresi"),
@@ -74,7 +76,8 @@ public final class HelpCommand {
 
 	private static List<Component> bankHelp() {
 		return List.of(
-				line("§e/banka §7— Ana menü (NPC ile de açılır)"),
+				line("§e/ekonomi §7— Ekonomi paneli (NPC sağ tık da açar)"),
+				line("§e/banka §7— Banka sekmesi"),
 				line("§e/banka ac §7— Vadesiz hesap aç"),
 				line("§e/banka yatir <mg> §7— Cüzdandan bankaya"),
 				line("§e/banka cek <mg> §7— Bankadan cüzdana"),
@@ -186,8 +189,9 @@ public final class HelpCommand {
 				line("§c[OP/MB] /merkezbanka rapor"),
 				line("§c[OP] /merkezbanka kur §7— Spawn banka binası"),
 				line("§c[OP] /merkezbanka muhafiz-temizle §7— Fazla muhafiz NPC sil"),
+				line("§c[OP] /ekonomi admin §7— Oyun içi OP paneli (13 sekme)"),
 				line("§c[OP] /ekonomi olay <tip> §7— Ekonomi olayı"),
-				line("§7Dashboard /admin — denetim paneli (staff girişi)")
+				line("§7Dashboard /admin — web denetim paneli (staff girişi)")
 		);
 	}
 

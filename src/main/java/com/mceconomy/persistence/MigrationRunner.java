@@ -125,6 +125,41 @@ public final class MigrationRunner {
 			migrateV25();
 			setVersion(25);
 		}
+		if (current < 26) {
+			migrateV26();
+			setVersion(26);
+		}
+		if (current < 27) {
+			migrateV27();
+			setVersion(27);
+		}
+	}
+
+	private void migrateV27() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V27: dinamik pazar item state...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS market_item_state (
+						item_id TEXT PRIMARY KEY,
+						price REAL NOT NULL,
+						base_price REAL NOT NULL,
+						supply_index REAL NOT NULL DEFAULT 0,
+						demand_index REAL NOT NULL DEFAULT 0
+					)
+					""");
+		}
+	}
+
+	private void migrateV26() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V26: konut plot_index...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("ALTER TABLE player_properties ADD COLUMN plot_index INTEGER NOT NULL DEFAULT -1");
+		} catch (SQLException e) {
+			McEconomyMod.LOGGER.debug("plot_index kolonu zaten var: {}", e.getMessage());
+		}
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("UPDATE player_properties SET plot_index = id WHERE plot_index < 0");
+		}
 	}
 
 	private void migrateV25() throws SQLException {

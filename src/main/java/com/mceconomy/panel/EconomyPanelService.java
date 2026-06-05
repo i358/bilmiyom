@@ -64,27 +64,6 @@ public final class EconomyPanelService {
 			}
 		}
 		JsonObject data = DashboardDataService.buildTabData(player, tab, params);
-		// #region agent log
-		{
-			JsonObject dbg = new JsonObject();
-			dbg.addProperty("tab", tab);
-			dbg.addProperty("adminMode", adminMode);
-			dbg.addProperty("isOp", com.mceconomy.util.Permissions.isServerOp(player));
-			if (data.has("inventoryCount")) {
-				dbg.addProperty("inventoryCount", data.get("inventoryCount").getAsInt());
-			}
-			if (data.has("playerCount")) {
-				dbg.addProperty("playerCount", data.get("playerCount").getAsInt());
-			}
-			if (data.has("json")) {
-				dbg.addProperty("hasConfigJson", true);
-			}
-			if (data.has("workforceCompanyCount")) {
-				dbg.addProperty("workforceCompanyCount", data.get("workforceCompanyCount").getAsInt());
-			}
-			PanelDebugLog.log("EconomyPanelService.sync", "tab sync built", "H1-H3", dbg);
-		}
-		// #endregion
 		DashboardActionService.ActionResult last = LAST_RESULTS.get(player.getUUID());
 		if (last != null) {
 			data.addProperty("lastMessage", last.message());

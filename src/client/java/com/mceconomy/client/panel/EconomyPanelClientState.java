@@ -61,22 +61,6 @@ public final class EconomyPanelClientState {
 			lastSuccess = data.get("success").getAsBoolean();
 		}
 		hydrateFormFieldsFromSync(syncTab);
-		// #region agent log
-		try {
-			var dbg = new com.google.gson.JsonObject();
-			dbg.addProperty("tab", syncTab);
-			dbg.addProperty("inventorySize", inventoryItems().size());
-			dbg.addProperty("hasConfigJson", data.has("json"));
-			dbg.addProperty("adminPlayersSize", data.has("adminPlayers") && data.get("adminPlayers").isJsonArray()
-					? data.getAsJsonArray("adminPlayers").size() : 0);
-			java.nio.file.Files.writeString(java.nio.file.Path.of("debug-e75fb2.log"),
-					"{\"sessionId\":\"e75fb2\",\"hypothesisId\":\"H1-H4\",\"location\":\"EconomyPanelClientState.applySync\","
-							+ "\"message\":\"client sync applied\",\"data\":" + dbg + ",\"timestamp\":"
-							+ System.currentTimeMillis() + "}\n",
-					java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-		} catch (Exception ignored) {
-		}
-		// #endregion
 	}
 
 	private static void hydrateFormFieldsFromSync(String syncTab) {

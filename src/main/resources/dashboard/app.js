@@ -512,7 +512,7 @@ async function loadItemCharts(page = 0, search = '') {
   const total = itemChartsData?.totalItems ?? items.length;
   if (meta) {
     const term = search ? ` · "${search}"` : '';
-    meta.textContent = `Sayfa ${itemChartsPage + 1}/${pageCount} · ${total} item${term}`;
+    meta.textContent = `Hareketliliğe göre · Sayfa ${itemChartsPage + 1}/${pageCount} · ${total} item${term}`;
   }
   const prev = document.getElementById('itemChartsPrev');
   const next = document.getElementById('itemChartsNext');

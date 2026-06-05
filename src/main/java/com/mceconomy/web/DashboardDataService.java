@@ -623,18 +623,19 @@ public final class DashboardDataService {
 		data.addProperty("economyIndexChangeBps", priceChangeBps(indexHistory, indexScaledMg));
 		data.add("indexHistory", indexHistory);
 
-		JsonArray marketTopItems = new JsonArray();
 		var catalog = market.catalog();
+		var priceHistory = manager.priceHistoryService();
+		List<MarketItemEntry> byMovement = priceHistory.chartItemsSortedByMovement("");
+		JsonArray marketTopItems = new JsonArray();
 		int topCount = 0;
-		for (MarketItemEntry entry : catalog.allSorted()) {
+		for (MarketItemEntry entry : byMovement) {
 			if (!entry.sellable() && !entry.buyable()) {
 				continue;
 			}
 			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
-			JsonObject row = marketItemRow(market, entry, priceMg, 24);
-			if (topCount < 8) {
-				marketTopItems.add(row);
-				topCount++;
+			marketTopItems.add(marketItemRow(market, entry, priceMg, 24));
+			if (++topCount >= 8) {
+				break;
 			}
 		}
 		data.add("marketTopItems", marketTopItems);
@@ -656,13 +657,15 @@ public final class DashboardDataService {
 
 		JsonArray topItemHistories = new JsonArray();
 		int count = 0;
-		for (MarketItemEntry entry : catalog.allSorted()) {
-			if (!entry.sellable() || count >= 5) {
+		for (MarketItemEntry entry : byMovement) {
+			if (!entry.sellable()) {
 				continue;
 			}
 			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
 			topItemHistories.add(marketItemRow(market, entry, priceMg, 24));
-			count++;
+			if (++count >= 5) {
+				break;
+			}
 		}
 		data.add("topHistories", topItemHistories);
 		data.addProperty("municipalBudgetMg", manager.centralBank().getMunicipalBudgetMg());
@@ -685,17 +688,26 @@ public final class DashboardDataService {
 	}
 
 	public static JsonObject buildChartsItems(int page, String search) {
-		var market = McEconomyMod.getEconomyManager().marketService();
-		var catalog = market.catalog();
+		var manager = McEconomyMod.getEconomyManager();
+		var market = manager.marketService();
+		List<MarketItemEntry> sorted = manager.priceHistoryService().chartItemsSortedByMovement(search);
+		int pageCount = Math.max(1, (sorted.size() + CHART_ITEMS_PAGE_SIZE - 1) / CHART_ITEMS_PAGE_SIZE);
+		int safePage = Math.min(Math.max(0, page), pageCount - 1);
+		int from = safePage * CHART_ITEMS_PAGE_SIZE;
+		int to = Math.min(sorted.size(), from + CHART_ITEMS_PAGE_SIZE);
 		JsonObject data = new JsonObject();
-		data.addProperty("page", page);
-		data.addProperty("pageCount", catalog.pageCount(CHART_ITEMS_PAGE_SIZE, search, null));
+		data.addProperty("page", safePage);
+		data.addProperty("pageCount", pageCount);
 		data.addProperty("pageSize", CHART_ITEMS_PAGE_SIZE);
-		data.addProperty("totalItems", catalog.allSorted().size());
+		data.addProperty("totalItems", sorted.size());
+		data.addProperty("sortBy", "movement");
 		JsonArray items = new JsonArray();
-		for (MarketItemEntry entry : catalog.page(page, CHART_ITEMS_PAGE_SIZE, search, null)) {
+		for (MarketItemEntry entry : sorted.subList(from, to)) {
 			long priceMg = market.priceEngine().getUnitPrice(entry.itemId());
-			items.add(marketItemRow(market, entry, priceMg, 48));
+			JsonObject row = marketItemRow(market, entry, priceMg, 48);
+			long absBps = manager.priceHistoryService().itemAbsChangeBps().getOrDefault(entry.itemId(), 0L);
+			row.addProperty("movementBps", absBps);
+			items.add(row);
 		}
 		data.add("items", items);
 		data.addProperty("updatedAt", System.currentTimeMillis());

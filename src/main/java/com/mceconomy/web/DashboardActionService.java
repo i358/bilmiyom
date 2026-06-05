@@ -3,6 +3,11 @@ package com.mceconomy.web;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mceconomy.McEconomyMod;
+import com.mceconomy.debug.DebugSessionLog;
+import com.mceconomy.facility.FacilityDepotService;
+import com.mceconomy.facility.FacilityItemTags;
+import com.mceconomy.facility.FacilityType;
+import com.mceconomy.job.JobItemTags;
 import com.mceconomy.insurance.InsurancePolicy;
 import com.mceconomy.blackmarket.IllegalGood;
 import com.mceconomy.command.BalanceCommand;
@@ -15,7 +20,9 @@ import com.mceconomy.market.Commodity;
 import com.mceconomy.player.PlayerEconomyProfile;
 import com.mceconomy.regulation.LaunderingService;
 import com.mceconomy.world.CentralBankPlacer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.UUID;
 
@@ -89,10 +96,29 @@ public final class DashboardActionService {
 
 	public static ActionResult bankOpenTerm(UUID uuid) {
 		try {
+			var bank = McEconomyMod.getEconomyManager().bankService();
 			double rate = McEconomyMod.getEconomyManager().centralBank().getBaseRate();
-			if (McEconomyMod.getEconomyManager().bankService().createTermAccount(uuid, rate)) {
+			boolean hasChecking = bank.getChecking(uuid).isPresent();
+			boolean hasTermBefore = bank.getTerm(uuid).isPresent();
+			if (bank.createTermAccount(uuid, rate)) {
+				// #region agent log
+				JsonObject ok = new JsonObject();
+				ok.addProperty("uuid", uuid.toString());
+				ok.addProperty("hasChecking", hasChecking);
+				ok.addProperty("hadTermBefore", hasTermBefore);
+				ok.addProperty("checkingMg", bank.getBankBalanceMg(uuid));
+				bank.getTerm(uuid).ifPresent(term -> ok.addProperty("termMg", term.balance()));
+				DebugSessionLog.log("DashboardActionService.bankOpenTerm", "open-term success", "B1-B2", ok);
+				// #endregion
 				return ActionResult.ok("Vadeli hesap açıldı. Faiz: %" + (int) (rate * 100));
 			}
+			// #region agent log
+			JsonObject fail = new JsonObject();
+			fail.addProperty("uuid", uuid.toString());
+			fail.addProperty("hasChecking", hasChecking);
+			fail.addProperty("hadTermBefore", hasTermBefore);
+			DebugSessionLog.log("DashboardActionService.bankOpenTerm", "open-term failed", "B1", fail);
+			// #endregion
 			return ActionResult.fail("Vadeli hesap zaten mevcut veya açılamadı.");
 		} catch (Exception e) {
 			return ActionResult.fail("İşlem başarısız.");
@@ -118,16 +144,53 @@ public final class DashboardActionService {
 	}
 
 	public static ActionResult bankWalletDeposit(UUID uuid, long displayMc) {
-		if (McEconomyMod.getEconomyManager().bankService().getChecking(uuid).isEmpty()) {
+		var bank = McEconomyMod.getEconomyManager().bankService();
+		boolean hasChecking = bank.getChecking(uuid).isPresent();
+		boolean hasTerm = bank.getTerm(uuid).isPresent();
+		if (!hasChecking) {
+			// #region agent log
+			JsonObject noAcct = new JsonObject();
+			noAcct.addProperty("uuid", uuid.toString());
+			noAcct.addProperty("hasChecking", false);
+			noAcct.addProperty("hasTerm", hasTerm);
+			noAcct.addProperty("displayMc", displayMc);
+			DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "no checking account", "B3", noAcct);
+			// #endregion
 			return ActionResult.fail("Banka hesabınız yok.");
 		}
 		long mg = mgForDisplayMc(displayMc);
 		if (mg <= 0) {
 			return ActionResult.fail("Geçersiz tutar.");
 		}
-		if (McEconomyMod.getEconomyManager().bankService().depositToBank(uuid, mg)) {
+		long walletBefore = McEconomyMod.getEconomyManager().currencyService().getBalance(uuid);
+		long checkingBefore = bank.getBankBalanceMg(uuid);
+		long termBefore = bank.getTerm(uuid).map(com.mceconomy.bank.BankAccount::balance).orElse(0L);
+		if (bank.depositToBank(uuid, mg)) {
+			// #region agent log
+			JsonObject ok = new JsonObject();
+			ok.addProperty("uuid", uuid.toString());
+			ok.addProperty("displayMc", displayMc);
+			ok.addProperty("mg", mg);
+			ok.addProperty("hasTerm", hasTerm);
+			ok.addProperty("walletBefore", walletBefore);
+			ok.addProperty("walletAfter", McEconomyMod.getEconomyManager().currencyService().getBalance(uuid));
+			ok.addProperty("checkingBefore", checkingBefore);
+			ok.addProperty("checkingAfter", bank.getBankBalanceMg(uuid));
+			ok.addProperty("termBefore", termBefore);
+			ok.addProperty("termAfter", bank.getTerm(uuid).map(com.mceconomy.bank.BankAccount::balance).orElse(0L));
+			DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "wallet-deposit success", "B1-B4-B5", ok);
+			// #endregion
 			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " bankaya yatırıldı.");
 		}
+		// #region agent log
+		JsonObject fail = new JsonObject();
+		fail.addProperty("uuid", uuid.toString());
+		fail.addProperty("displayMc", displayMc);
+		fail.addProperty("mg", mg);
+		fail.addProperty("walletMg", walletBefore);
+		fail.addProperty("hasTerm", hasTerm);
+		DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "wallet-deposit failed", "B3", fail);
+		// #endregion
 		return ActionResult.fail("Yetersiz cüzdan bakiyesi.");
 	}
 
@@ -220,17 +283,77 @@ public final class DashboardActionService {
 		if (entry == null || !entry.sellable()) {
 			return ActionResult.fail("Bu item satilamaz.");
 		}
+		// #region agent log
+		JsonObject inv = inventorySellBreakdown(player, item);
+		inv.addProperty("itemId", itemId);
+		inv.addProperty("quantity", quantity);
+		inv.addProperty("catalogSellable", true);
+		FacilityDepotService depot = McEconomyMod.getEconomyManager().facilityDepotService();
+		if (depot != null && player.level() instanceof ServerLevel level) {
+			inv.addProperty("marketDepotFreeSlots", depot.freeSlotCount(level, FacilityType.MARKET));
+			inv.addProperty("marketDepotTotal", depot.totalItemCount(level, FacilityType.MARKET));
+		}
+		DebugSessionLog.log("DashboardActionService.marketSellByItem", "sell request", "H1-H2", inv);
+		// #endregion
 		if (market.sell(player, item, quantity)) {
 			return ActionResult.ok(quantity + "x " + entry.displayName() + " satildi.");
 		}
 		return ActionResult.fail("Envanterde yeterli esya yok.");
 	}
 
+	private static JsonObject inventorySellBreakdown(ServerPlayer player, net.minecraft.world.item.Item item) {
+		JsonObject data = new JsonObject();
+		int totalCount = 0;
+		int sellableCount = 0;
+		int loanCount = 0;
+		int wantedCount = 0;
+		for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+			ItemStack stack = player.getInventory().getItem(i);
+			if (!stack.is(item)) {
+				continue;
+			}
+			int c = stack.getCount();
+			totalCount += c;
+			if (JobItemTags.isJobLoan(stack)) {
+				loanCount += c;
+			} else if (FacilityItemTags.matchesWantedSerial(stack)) {
+				wantedCount += c;
+			} else {
+				sellableCount += c;
+			}
+		}
+		data.addProperty("totalCount", totalCount);
+		data.addProperty("sellableCount", sellableCount);
+		data.addProperty("loanCount", loanCount);
+		data.addProperty("wantedCount", wantedCount);
+		return data;
+	}
+
 	public static ActionResult marketSellAllByItem(ServerPlayer player, String itemId, String commodityId) {
 		net.minecraft.world.item.Item item = resolveMarketItem(itemId, commodityId);
 		if (item == net.minecraft.world.item.Items.AIR) {
+			// #region agent log
+			JsonObject bad = new JsonObject();
+			bad.addProperty("itemId", itemId);
+			bad.addProperty("commodityId", commodityId);
+			DebugSessionLog.log("DashboardActionService.marketSellAllByItem", "resolve failed", "H3", bad);
+			// #endregion
 			return ActionResult.fail("Gecersiz item.");
 		}
+		// #region agent log
+		JsonObject inv = inventorySellBreakdown(player, item);
+		inv.addProperty("itemId", itemId);
+		inv.addProperty("resolvedItem", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item).toString());
+		var market = McEconomyMod.getEconomyManager().marketService();
+		var entry = market.catalog().resolve(item);
+		inv.addProperty("catalogSellable", entry != null && entry.sellable());
+		FacilityDepotService depot = McEconomyMod.getEconomyManager().facilityDepotService();
+		if (depot != null && player.level() instanceof ServerLevel level) {
+			inv.addProperty("marketDepotFreeSlots", depot.freeSlotCount(level, FacilityType.MARKET));
+			inv.addProperty("marketDepotTotal", depot.totalItemCount(level, FacilityType.MARKET));
+		}
+		DebugSessionLog.log("DashboardActionService.marketSellAllByItem", "sell-all request", "H1-H2-H3", inv);
+		// #endregion
 		if (McEconomyMod.getEconomyManager().marketService().sellAll(player, item)) {
 			return ActionResult.ok("Tum " + com.mceconomy.market.ItemPriceHeuristic.displayName(item) + " satildi.");
 		}

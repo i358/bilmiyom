@@ -85,7 +85,8 @@ function renderStats() {
     : '<span class="badge badge-ok">Temiz</span>';
   document.getElementById('statGrid').innerHTML = `
     <div class="stat-card gold"><div class="label">Cüzdan</div><div class="value">${me.wallet}</div></div>
-    <div class="stat-card accent"><div class="label">Banka</div><div class="value">${me.bank}</div></div>
+    <div class="stat-card accent"><div class="label">Vadesiz</div><div class="value">${me.checking || me.bank}</div></div>
+    <div class="stat-card"><div class="label">Vadeli</div><div class="value">${me.hasTerm ? (me.termBalance || formatMg(me.termBalanceMg || 0)) : '—'}</div></div>
     <div class="stat-card"><div class="label">Kara Para</div><div class="value">${me.dirty}</div></div>
     <div class="stat-card"><div class="label">Kredi Skoru</div><div class="value">${me.creditScore}</div></div>
     <div class="stat-card"><div class="label">Meslek</div><div class="value">${me.job}</div></div>
@@ -286,9 +287,31 @@ async function renderLeveragePositions() {
   });
 }
 
+function renderTermBalanceChart(history, currentMg) {
+  const hint = document.getElementById('termChartHint');
+  const el = document.getElementById('termBalanceChart');
+  if (!el) return;
+  if (!me.hasTerm) {
+    destroyChart('termBalance');
+    if (hint) {
+      hint.textContent = 'Vadeli hesap açın ve bakiye yatırın; grafik ~30 sn aralıkla güncellenir.';
+      hint.classList.remove('hidden');
+    }
+    return;
+  }
+  const chart = historyToChart(history || [], 1000, currentMg);
+  const bps = overview?.termHistoryChangeBps ?? 0;
+  const pct = me.termInterestTotalPct != null ? me.termInterestTotalPct : Math.round((me.termInterestRate || 0) * 100);
+  const interval = me.termInterestIntervalSec || 60;
+  const subtitle = `7 gün toplam getiri %${pct} · ${interval} sn'de bir faiz`;
+  renderLineChart('termBalanceChart', 'termBalance', chart.labels, chart.values, 'Vadeli Bakiye', '#aa88ff', bps, subtitle);
+  if (hint) hint.classList.add('hidden');
+}
+
 async function renderCharts() {
   renderPortfolioChart();
   renderMarketBar(catalog?.commodities || me.market || []);
+  renderTermBalanceChart(overview?.termHistory || [], overview?.termBalanceMg || me.termBalanceMg || 0);
   renderIndexChart(overview?.indexHistory || []);
   renderMacroCharts();
   renderShareBar(catalog?.companies || []);
@@ -397,6 +420,7 @@ function startChartLiveRefresh() {
       const levId = document.getElementById('levChartSelect')?.value;
       if (levId) loadLeverageChart(+levId);
       overview = await api('/charts/overview');
+      renderTermBalanceChart(overview?.termHistory || [], overview?.termBalanceMg || me.termBalanceMg || 0);
       renderIndexChart(overview?.indexHistory || []);
       renderMacroCharts();
       renderTokenBar(overview?.tokens || []);
@@ -448,8 +472,9 @@ function renderPortfolioChart() {
   charts.portfolio = new Chart(el, {
     type: 'doughnut',
     data: {
-      labels: ['Cüzdan', 'Banka', 'Kara Para'],
-      datasets: [{ data: [me.walletMg || 0, me.bankMg || 0, me.dirtyMg || 0], backgroundColor: ['#d4a843', '#4da6ff', '#555'] }]
+      labels: ['Cüzdan', 'Vadesiz', 'Vadeli', 'Kara Para'],
+      datasets: [{ data: [me.walletMg || 0, me.checkingMg || me.bankMg || 0, me.termBalanceMg || 0, me.dirtyMg || 0],
+        backgroundColor: ['#d4a843', '#4da6ff', '#aa88ff', '#555'] }]
     },
     options: { plugins: { legend: { labels: { color: '#8b9cb3' } } } }
   });
@@ -1077,6 +1102,7 @@ async function refresh() {
   const adminLink = document.getElementById('adminLink');
   if (adminLink) adminLink.classList.toggle('hidden', !me.op);
   renderStats();
+  renderBankAccounts();
   renderHoldings();
   renderLoan();
   renderQuest();
@@ -1151,12 +1177,56 @@ document.getElementById('payBtn').onclick = () => doAction('/actions/pay', {
   target: document.getElementById('payTarget').value, mc: +document.getElementById('payGrams').value
 }, refresh);
 
+function walletAccountType() {
+  return document.getElementById('walletAccountType')?.value || 'checking';
+}
+
+function renderBankAccounts() {
+  const checkingLine = document.getElementById('checkingBalanceLine');
+  const termLine = document.getElementById('termBalanceLine');
+  const interestLine = document.getElementById('termInterestLine');
+  const maturityLine = document.getElementById('termMaturityLine');
+  const openCheckingBtn = document.getElementById('openCheckingBtn');
+  const openTermBtn = document.getElementById('openTermBtn');
+  if (checkingLine) {
+    checkingLine.textContent = me.hasChecking
+      ? `Bakiye: ${me.checking || me.bank}`
+      : 'Hesap yok — vadesiz hesap açın';
+  }
+  if (openCheckingBtn) openCheckingBtn.classList.toggle('hidden', !!me.hasChecking);
+  if (termLine) {
+    if (me.hasTerm) {
+      termLine.textContent = `Bakiye: ${me.termBalance || formatMg(me.termBalanceMg || 0)}`;
+      if (interestLine) {
+        const pct = me.termInterestTotalPct != null ? me.termInterestTotalPct
+          : (me.termInterestRate != null ? Math.round(me.termInterestRate * 100) : '—');
+        const sec = me.termInterestIntervalSec || 60;
+        interestLine.textContent = `7 gün toplam getiri: %${pct} · her ${sec} sn faiz işlenir`;
+      }
+      if (maturityLine) {
+        maturityLine.textContent = me.termMatured
+          ? 'Vade doldu — çekim yapılabilir'
+          : (me.termMaturityDaysLeft != null
+            ? `Kalan vade: ${me.termMaturityDaysLeft} gün`
+            : 'Vade dolana kadar çekim yok');
+      }
+    } else {
+      termLine.textContent = 'Hesap yok — vadeli hesap açın';
+      if (interestLine) interestLine.textContent = '';
+      if (maturityLine) maturityLine.textContent = '';
+    }
+  }
+  if (openTermBtn) openTermBtn.classList.toggle('hidden', !!me.hasTerm);
+}
+
 document.getElementById('walletToBankBtn').onclick = () => doAction('/actions/bank/wallet-deposit', {
-  mc: +document.getElementById('walletMoveGrams').value
+  mc: +document.getElementById('walletMoveGrams').value,
+  account: walletAccountType()
 }, refresh);
 
 document.getElementById('bankToWalletBtn').onclick = () => doAction('/actions/bank/wallet-withdraw', {
-  mc: +document.getElementById('walletMoveGrams').value
+  mc: +document.getElementById('walletMoveGrams').value,
+  account: walletAccountType()
 }, refresh);
 
 document.getElementById('openCheckingBtn').onclick = () => doAction('/actions/bank/open-checking', {}, refresh);

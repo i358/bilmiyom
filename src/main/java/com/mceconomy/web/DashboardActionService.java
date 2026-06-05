@@ -110,7 +110,9 @@ public final class DashboardActionService {
 				bank.getTerm(uuid).ifPresent(term -> ok.addProperty("termMg", term.balance()));
 				DebugSessionLog.log("DashboardActionService.bankOpenTerm", "open-term success", "B1-B2", ok);
 				// #endregion
-				return ActionResult.ok("Vadeli hesap açıldı. Faiz: %" + (int) (rate * 100));
+				return ActionResult.ok("Vadeli hesap açıldı. 7 gün sonunda toplam getiri: %"
+						+ (int) (rate * 100) + " (her "
+						+ com.mceconomy.bank.BankService.interestIntervalSeconds() + " sn'de işlenir).");
 			}
 			// #region agent log
 			JsonObject fail = new JsonObject();
@@ -144,10 +146,19 @@ public final class DashboardActionService {
 	}
 
 	public static ActionResult bankWalletDeposit(UUID uuid, long displayMc) {
+		return bankWalletDeposit(uuid, displayMc, "checking");
+	}
+
+	public static ActionResult bankWalletDeposit(UUID uuid, long displayMc, String accountType) {
 		var bank = McEconomyMod.getEconomyManager().bankService();
+		boolean toTerm = isTermAccountType(accountType);
 		boolean hasChecking = bank.getChecking(uuid).isPresent();
 		boolean hasTerm = bank.getTerm(uuid).isPresent();
-		if (!hasChecking) {
+		if (toTerm) {
+			if (!hasTerm) {
+				return ActionResult.fail("Vadeli hesabınız yok. Önce vadeli hesap açın.");
+			}
+		} else if (!hasChecking) {
 			// #region agent log
 			JsonObject noAcct = new JsonObject();
 			noAcct.addProperty("uuid", uuid.toString());
@@ -156,7 +167,7 @@ public final class DashboardActionService {
 			noAcct.addProperty("displayMc", displayMc);
 			DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "no checking account", "B3", noAcct);
 			// #endregion
-			return ActionResult.fail("Banka hesabınız yok.");
+			return ActionResult.fail("Vadesiz hesabınız yok. Önce vadesiz hesap açın.");
 		}
 		long mg = mgForDisplayMc(displayMc);
 		if (mg <= 0) {
@@ -164,23 +175,25 @@ public final class DashboardActionService {
 		}
 		long walletBefore = McEconomyMod.getEconomyManager().currencyService().getBalance(uuid);
 		long checkingBefore = bank.getBankBalanceMg(uuid);
-		long termBefore = bank.getTerm(uuid).map(com.mceconomy.bank.BankAccount::balance).orElse(0L);
-		if (bank.depositToBank(uuid, mg)) {
+		long termBefore = bank.getTermBalanceMg(uuid);
+		boolean ok = toTerm ? bank.depositToTerm(uuid, mg) : bank.depositToBank(uuid, mg);
+		if (ok) {
 			// #region agent log
-			JsonObject ok = new JsonObject();
-			ok.addProperty("uuid", uuid.toString());
-			ok.addProperty("displayMc", displayMc);
-			ok.addProperty("mg", mg);
-			ok.addProperty("hasTerm", hasTerm);
-			ok.addProperty("walletBefore", walletBefore);
-			ok.addProperty("walletAfter", McEconomyMod.getEconomyManager().currencyService().getBalance(uuid));
-			ok.addProperty("checkingBefore", checkingBefore);
-			ok.addProperty("checkingAfter", bank.getBankBalanceMg(uuid));
-			ok.addProperty("termBefore", termBefore);
-			ok.addProperty("termAfter", bank.getTerm(uuid).map(com.mceconomy.bank.BankAccount::balance).orElse(0L));
-			DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "wallet-deposit success", "B1-B4-B5", ok);
+			JsonObject logOk = new JsonObject();
+			logOk.addProperty("uuid", uuid.toString());
+			logOk.addProperty("displayMc", displayMc);
+			logOk.addProperty("mg", mg);
+			logOk.addProperty("accountType", toTerm ? "term" : "checking");
+			logOk.addProperty("walletBefore", walletBefore);
+			logOk.addProperty("walletAfter", McEconomyMod.getEconomyManager().currencyService().getBalance(uuid));
+			logOk.addProperty("checkingBefore", checkingBefore);
+			logOk.addProperty("checkingAfter", bank.getBankBalanceMg(uuid));
+			logOk.addProperty("termBefore", termBefore);
+			logOk.addProperty("termAfter", bank.getTermBalanceMg(uuid));
+			DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "wallet-deposit success", "B1-B4-B5", logOk);
 			// #endregion
-			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " bankaya yatırıldı.");
+			String target = toTerm ? "vadeli hesaba" : "vadesiz hesaba";
+			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " " + target + " yatırıldı.");
 		}
 		// #region agent log
 		JsonObject fail = new JsonObject();
@@ -188,24 +201,46 @@ public final class DashboardActionService {
 		fail.addProperty("displayMc", displayMc);
 		fail.addProperty("mg", mg);
 		fail.addProperty("walletMg", walletBefore);
-		fail.addProperty("hasTerm", hasTerm);
+		fail.addProperty("accountType", toTerm ? "term" : "checking");
 		DebugSessionLog.log("DashboardActionService.bankWalletDeposit", "wallet-deposit failed", "B3", fail);
 		// #endregion
 		return ActionResult.fail("Yetersiz cüzdan bakiyesi.");
 	}
 
 	public static ActionResult bankWalletWithdraw(UUID uuid, long displayMc) {
-		if (McEconomyMod.getEconomyManager().bankService().getChecking(uuid).isEmpty()) {
-			return ActionResult.fail("Banka hesabınız yok.");
-		}
+		return bankWalletWithdraw(uuid, displayMc, "checking");
+	}
+
+	public static ActionResult bankWalletWithdraw(UUID uuid, long displayMc, String accountType) {
+		var bank = McEconomyMod.getEconomyManager().bankService();
+		boolean fromTerm = isTermAccountType(accountType);
 		long mg = mgForDisplayMc(displayMc);
 		if (mg <= 0) {
 			return ActionResult.fail("Geçersiz tutar.");
 		}
-		if (McEconomyMod.getEconomyManager().bankService().withdrawFromBank(uuid, mg)) {
-			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " cüzdana çekildi.");
+		if (fromTerm) {
+			if (bank.getTerm(uuid).isEmpty()) {
+				return ActionResult.fail("Vadeli hesabınız yok.");
+			}
+			if (!bank.isTermMatured(uuid)) {
+				return ActionResult.fail("Vadeli hesap vadesi dolmadan çekilemez.");
+			}
+			if (bank.withdrawFromTerm(uuid, mg)) {
+				return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " vadeli hesaptan cüzdana çekildi.");
+			}
+			return ActionResult.fail("Yetersiz vadeli bakiye.");
 		}
-		return ActionResult.fail("Yetersiz banka bakiyesi.");
+		if (bank.getChecking(uuid).isEmpty()) {
+			return ActionResult.fail("Vadesiz hesabınız yok.");
+		}
+		if (bank.withdrawFromBank(uuid, mg)) {
+			return ActionResult.ok(GoldStandard.formatMilligrams(mg) + " vadesiz hesaptan cüzdana çekildi.");
+		}
+		return ActionResult.fail("Yetersiz vadesiz bakiye.");
+	}
+
+	private static boolean isTermAccountType(String accountType) {
+		return accountType != null && accountType.equalsIgnoreCase("term");
 	}
 
 	public static ActionResult bankDepositIngots(ServerPlayer player, int ingots) {

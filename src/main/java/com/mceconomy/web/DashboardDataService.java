@@ -120,6 +120,12 @@ public final class DashboardDataService {
 				if (charts.has("commodities")) {
 					root.add("commodities", charts.get("commodities"));
 				}
+				if (charts.has("termHistory")) {
+					root.add("termHistory", charts.get("termHistory"));
+				}
+				if (charts.has("termBalanceMg")) {
+					root.addProperty("termBalanceMg", charts.get("termBalanceMg").getAsLong());
+				}
 			}
 			case "employees" -> {
 				JsonObject workforce = buildWorkforce(uuid);
@@ -248,7 +254,10 @@ public final class DashboardDataService {
 
 	private static void mergeMeSummary(JsonObject root, JsonObject me) {
 		for (String key : new String[]{"totalMg", "total", "dirty", "dirtyMg", "creditScore", "job", "jobId",
-				"hasChecking", "hasTerm", "bankCertified", "canUseLegal", "isEconomyMinister", "centralBankOfficial"}) {
+				"hasChecking", "hasTerm", "checking", "checkingMg", "termBalance", "termBalanceMg",
+				"termInterestRate", "termInterestTotalPct", "termInterestIntervalSec",
+				"termMaturesAt", "termMatured", "termMaturityDaysLeft", "termHistory", "termBalanceMg",
+				"bankCertified", "canUseLegal", "isEconomyMinister", "centralBankOfficial"}) {
 			if (me.has(key)) {
 				root.add(key, me.get(key));
 			}
@@ -658,6 +667,13 @@ public final class DashboardDataService {
 		data.add("fiatStrengthHistory", loadHistory("MACRO", "fiat_strength", 48));
 		if (manager.centralBank() != null) {
 			addFiatMacro(data, manager.centralBank());
+		}
+		if (manager.bankService().getTerm(uuid).isPresent()) {
+			long termBal = manager.bankService().getTermBalanceMg(uuid);
+			JsonArray termHistory = loadHistory("TERM", uuid.toString(), 48);
+			data.addProperty("termBalanceMg", termBal);
+			data.add("termHistory", termHistory);
+			data.addProperty("termHistoryChangeBps", priceChangeBps(termHistory, termBal));
 		}
 		return data;
 	}
@@ -1259,6 +1275,29 @@ public final class DashboardDataService {
 		data.addProperty("blacklisted", profile.blacklisted());
 		data.addProperty("bankCertified", profile.bankCertified());
 		data.addProperty("hasChecking", manager.bankService().getChecking(uuid).isPresent());
+		data.addProperty("checkingMg", bank);
+		data.addProperty("checking", GoldStandard.formatMilligrams(bank));
+		manager.bankService().getTerm(uuid).ifPresent(term -> {
+			data.addProperty("hasTerm", true);
+			data.addProperty("termBalanceMg", term.balance());
+			data.addProperty("termBalance", GoldStandard.formatMilligrams(term.balance()));
+			data.addProperty("termInterestRate", term.interestRate());
+			data.addProperty("termInterestTotalPct", (int) Math.round(term.interestRate() * 100));
+			data.addProperty("termInterestIntervalSec", com.mceconomy.bank.BankService.interestIntervalSeconds());
+			data.addProperty("termMaturesAt", term.maturesAt());
+			boolean matured = manager.bankService().isTermMatured(uuid);
+			data.addProperty("termMatured", matured);
+			if (!matured && term.maturesAt() > System.currentTimeMillis()) {
+				long daysLeft = (term.maturesAt() - System.currentTimeMillis() + 86_399_999L) / 86_400_000L;
+				data.addProperty("termMaturityDaysLeft", daysLeft);
+			}
+		});
+		if (!data.has("hasTerm")) {
+			data.addProperty("hasTerm", false);
+			data.addProperty("termBalanceMg", 0);
+			data.addProperty("termBalance", GoldStandard.formatMilligrams(0));
+			data.addProperty("termMatured", false);
+		}
 		data.addProperty("canUseLegal", profile.canUseLegalEconomy());
 		data.addProperty("online", DashboardActionService.onlinePlayer(uuid) != null);
 		data.addProperty("economyIndex", manager.marketService().economyIndex().calculate());

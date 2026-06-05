@@ -160,6 +160,13 @@ public class EconomyPanelScreen extends Screen {
 				ff.button("Gonder", 80, () -> EconomyPanelNetworking.pay(
 						FormFields.parseLong(EconomyPanelClientState.formField("payGrams", "10"), 10)));
 				ff.gap(8);
+				ff.label("Hedef hesap");
+				String acct = EconomyPanelClientState.formField("bankAccountType", "checking");
+				ff.button(acct.equals("term") ? "[Vadeli]" : "Vadeli", 58,
+						() -> EconomyPanelClientState.setFormField("bankAccountType", "term"));
+				ff.button(acct.equals("checking") ? "[Vadesiz]" : "Vadesiz", 64,
+						() -> EconomyPanelClientState.setFormField("bankAccountType", "checking"));
+				ff.gap(4);
 				ff.numberField("walletMoveGrams", "Tutar ($)", 80, "10");
 				ff.button("Bankaya Yatir", 100, () -> EconomyPanelNetworking.walletDeposit(
 						FormFields.parseLong(EconomyPanelClientState.formField("walletMoveGrams", "10"), 10)));
@@ -760,7 +767,10 @@ public class EconomyPanelScreen extends Screen {
 		JsonObject data = EconomyPanelClientState.data();
 		graphics.text(font, PanelTabs.titleFor(EconomyPanelClientState.tab()), cx, 8, 0xFFFFFFFF, false);
 		graphics.text(font, "Cuzdan: " + text(data, "wallet", "-"), cx, 20, 0xFFE8C547, false);
-		graphics.text(font, "Banka: " + text(data, "bank", "-"), cx + 130, 20, 0xFF88CCFF, false);
+		graphics.text(font, "Vadesiz: " + text(data, "checking", text(data, "bank", "-")), cx + 120, 20, 0xFF88CCFF, false);
+		if (data.has("hasTerm") && data.get("hasTerm").getAsBoolean()) {
+			graphics.text(font, "Vadeli: " + text(data, "termBalance", "-"), cx + 250, 20, 0xFFAA88FF, false);
+		}
 		if (EconomyPanelClientState.isOp()) {
 			graphics.text(font, "OP", cx + 260, 20, 0xFF7BED9F, false);
 		}
@@ -776,6 +786,8 @@ public class EconomyPanelScreen extends Screen {
 			case "inventory" -> renderInventory(graphics, cx, mouseX, mouseY);
 			case "docs" -> renderDocs(graphics, cx);
 			case "market" -> renderMarket(graphics, cx, mouseX, mouseY);
+			case "bank" -> renderBank(graphics, cx);
+			case "wallet" -> renderWallet(graphics, cx);
 			case "loan" -> renderLoan(graphics, cx);
 			case "job" -> renderJob(graphics, cx);
 			case "exchange" -> renderExchange(graphics, cx);
@@ -828,8 +840,13 @@ public class EconomyPanelScreen extends Screen {
 		int y = contentTop + 8;
 		graphics.text(font, "Cuzdan: " + text(data, "wallet", "-"), cx, y, 0xFFFFFFFF, false);
 		y += 12;
-		graphics.text(font, "Banka: " + text(data, "bank", "-"), cx, y, 0xFFCCCCCC, false);
+		graphics.text(font, "Vadesiz: " + text(data, "checking", text(data, "bank", "-")), cx, y, 0xFF88CCFF, false);
 		y += 12;
+		if (data.has("hasTerm") && data.get("hasTerm").getAsBoolean()) {
+			graphics.text(font, "Vadeli: " + text(data, "termBalance", "-"), cx, y, 0xFFAA88FF, false);
+			y += 12;
+		}
+		y += 0;
 		graphics.text(font, "Meslek: " + text(data, "job", "-"), cx, y, 0xFFCCCCCC, false);
 		y += 16;
 		renderMarketPreview(graphics, cx, y, 6);
@@ -890,6 +907,11 @@ public class EconomyPanelScreen extends Screen {
 		JsonArray commodities = data.has("commodities") ? data.getAsJsonArray("commodities")
 				: EconomyPanelClientState.marketItems();
 		ChartRenderer.renderBar(graphics, font, cx, y, width - cx - 12, 80, commodities, "name", "priceMg", 0x66D4A843, "Market");
+		y += 88;
+		if (data.has("hasTerm") && data.get("hasTerm").getAsBoolean()) {
+			JsonArray termHist = data.has("termHistory") ? data.getAsJsonArray("termHistory") : new JsonArray();
+			ChartRenderer.renderLine(graphics, font, cx, y, width - cx - 12, 70, termHist, "priceMg", 0xFFAA88FF, "Vadeli Bakiye");
+		}
 	}
 
 	private void renderDocs(GuiGraphicsExtractor graphics, int cx) {
@@ -971,6 +993,64 @@ public class EconomyPanelScreen extends Screen {
 			}
 			g.text(font, truncate(line, 42), row.x() + 22, row.y() + 6, 0xFFFFFFFF, false);
 		}, selected != null ? indexOfItem(items, selected) : null);
+	}
+
+	private void renderBank(GuiGraphicsExtractor graphics, int cx) {
+		JsonObject data = EconomyPanelClientState.data();
+		int y = contentTop + 8;
+		graphics.text(font, "Vadesiz Hesap", cx, y, 0xFF88CCFF, false);
+		y += 12;
+		if (data.has("hasChecking") && data.get("hasChecking").getAsBoolean()) {
+			graphics.text(font, "Bakiye: " + text(data, "checking", text(data, "bank", "-")), cx, y, 0xFFFFFFFF, false);
+		} else {
+			graphics.text(font, "Hesap yok — Vadesiz Hesap Ac", cx, y, 0xFFAAAAAA, false);
+		}
+		y += 18;
+		graphics.text(font, "Vadeli Hesap", cx, y, 0xFFAA88FF, false);
+		y += 12;
+		if (data.has("hasTerm") && data.get("hasTerm").getAsBoolean()) {
+			graphics.text(font, "Bakiye: " + text(data, "termBalance", "-"), cx, y, 0xFFFFFFFF, false);
+			y += 12;
+			if (data.has("termInterestTotalPct") || data.has("termInterestRate")) {
+				int pct = data.has("termInterestTotalPct")
+						? data.get("termInterestTotalPct").getAsInt()
+						: (int) Math.round(data.get("termInterestRate").getAsDouble() * 100);
+				int sec = data.has("termInterestIntervalSec")
+						? data.get("termInterestIntervalSec").getAsInt() : 60;
+				graphics.text(font, "7 gun getiri: %" + pct + " / " + sec + " sn", cx, y, 0xFFCCCCCC, false);
+				y += 12;
+			}
+			if (data.has("termMatured") && data.get("termMatured").getAsBoolean()) {
+				graphics.text(font, "Vade doldu — cekim yapilabilir", cx, y, 0xFF7BED9F, false);
+			} else if (data.has("termMaturityDaysLeft")) {
+				graphics.text(font, "Kalan vade: " + data.get("termMaturityDaysLeft").getAsLong() + " gun", cx, y, 0xFFE8C547, false);
+			} else {
+				graphics.text(font, "Vade dolana kadar cekim yok", cx, y, 0xFFE8C547, false);
+			}
+		} else {
+			graphics.text(font, "Hesap yok — Vadeli Hesap Ac", cx, y, 0xFFAAAAAA, false);
+		}
+		y += 16;
+		graphics.text(font, "Kulce islemleri vadesiz hesaba yatar.", cx, y, 0xFF888888, false);
+	}
+
+	private void renderWallet(GuiGraphicsExtractor graphics, int cx) {
+		JsonObject data = EconomyPanelClientState.data();
+		int y = contentTop + 8;
+		graphics.text(font, "Cuzdan: " + text(data, "wallet", "-"), cx, y, 0xFFE8C547, false);
+		y += 14;
+		String acct = EconomyPanelClientState.formField("bankAccountType", "checking");
+		graphics.text(font, "Secili hesap: " + ("term".equals(acct) ? "Vadeli" : "Vadesiz"), cx, y, 0xFFDDDDDD, false);
+		y += 12;
+		if ("term".equals(acct)) {
+			if (data.has("hasTerm") && data.get("hasTerm").getAsBoolean()) {
+				graphics.text(font, "Vadeli bakiye: " + text(data, "termBalance", "-"), cx, y, 0xFFAA88FF, false);
+			} else {
+				graphics.text(font, "Once Banka sekmesinden vadeli hesap acin.", cx, y, 0xFFFF8888, false);
+			}
+		} else {
+			graphics.text(font, "Vadesiz bakiye: " + text(data, "checking", text(data, "bank", "-")), cx, y, 0xFF88CCFF, false);
+		}
 	}
 
 	private void renderLoan(GuiGraphicsExtractor graphics, int cx) {

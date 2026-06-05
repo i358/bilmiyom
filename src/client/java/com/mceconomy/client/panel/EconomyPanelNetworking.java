@@ -98,14 +98,24 @@ public final class EconomyPanelNetworking {
 	}
 
 	public static void walletDeposit(long mc) {
+		walletDeposit(mc, EconomyPanelClientState.formField("bankAccountType", "checking"));
+	}
+
+	public static void walletDeposit(long mc, String accountType) {
 		JsonObject body = new JsonObject();
 		body.addProperty("mc", mc);
+		body.addProperty("account", accountType == null || accountType.isBlank() ? "checking" : accountType);
 		sendAction("bank/wallet-deposit", body);
 	}
 
 	public static void walletWithdraw(long mc) {
+		walletWithdraw(mc, EconomyPanelClientState.formField("bankAccountType", "checking"));
+	}
+
+	public static void walletWithdraw(long mc, String accountType) {
 		JsonObject body = new JsonObject();
 		body.addProperty("mc", mc);
+		body.addProperty("account", accountType == null || accountType.isBlank() ? "checking" : accountType);
 		sendAction("bank/wallet-withdraw", body);
 	}
 

@@ -27,6 +27,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public final class BankService {
+	public static final long TERM_LENGTH_MS = 7L * 24 * 60 * 60 * 1000;
+
 	private final Map<UUID, BankAccount> checkingAccounts = new HashMap<>();
 	private final Map<UUID, BankAccount> termAccounts = new HashMap<>();
 	private final BankRepository repository;
@@ -78,7 +80,7 @@ public final class BankService {
 			// #endregion
 			return false;
 		}
-		long maturesAt = System.currentTimeMillis() + 7L * 24 * 60 * 60 * 1000;
+		long maturesAt = System.currentTimeMillis() + TERM_LENGTH_MS;
 		BankAccount account = BankAccount.createTerm(owner, baseRate, maturesAt);
 		repository.save(account);
 		termAccounts.put(owner, account);
@@ -138,6 +140,9 @@ public final class BankService {
 			return false;
 		}
 		boolean ok = account.deposit(amount);
+		if (ok) {
+			persistAccount(account);
+		}
 		// #region agent log
 		JsonObject done = new JsonObject();
 		done.addProperty("owner", owner.toString());
@@ -153,6 +158,63 @@ public final class BankService {
 		DebugSessionLog.log("BankService.depositToBank", "deposit result", "B1-B4-B5", done);
 		// #endregion
 		return ok;
+	}
+
+	public boolean depositToTerm(UUID owner, long amount) {
+		BankAccount account = termAccounts.get(owner);
+		if (account == null || amount <= 0) {
+			return false;
+		}
+		if (currencyService.getBalance(owner) < 0) {
+			return false;
+		}
+		if (!currencyService.withdraw(owner, amount, TransactionType.WITHDRAW)) {
+			return false;
+		}
+		if (!account.deposit(amount)) {
+			currencyService.deposit(owner, amount, TransactionType.DEPOSIT);
+			return false;
+		}
+		persistAccount(account);
+		return true;
+	}
+
+	public boolean withdrawFromTerm(UUID owner, long amount) {
+		BankAccount account = termAccounts.get(owner);
+		if (account == null || amount <= 0 || !isTermMatured(owner)) {
+			return false;
+		}
+		if (!account.withdraw(amount)) {
+			return false;
+		}
+		if (!currencyService.deposit(owner, amount, TransactionType.DEPOSIT)) {
+			account.deposit(amount);
+			return false;
+		}
+		persistAccount(account);
+		return true;
+	}
+
+	public boolean isTermMatured(UUID owner) {
+		BankAccount account = termAccounts.get(owner);
+		if (account == null) {
+			return false;
+		}
+		long maturesAt = account.maturesAt();
+		return maturesAt <= 0 || System.currentTimeMillis() >= maturesAt;
+	}
+
+	public long getTermBalanceMg(UUID owner) {
+		BankAccount account = termAccounts.get(owner);
+		return account != null ? account.balance() : 0;
+	}
+
+	private void persistAccount(BankAccount account) {
+		try {
+			repository.save(account);
+		} catch (SQLException e) {
+			com.mceconomy.McEconomyMod.LOGGER.error("Banka hesabi kaydedilemedi", e);
+		}
 	}
 
 	/** Vadesiz hesaptaki para borc varken cuzdana aktarilir. */
@@ -184,7 +246,12 @@ public final class BankService {
 		if (!account.withdraw(amount)) {
 			return false;
 		}
-		return currencyService.deposit(owner, amount, TransactionType.DEPOSIT);
+		if (!currencyService.deposit(owner, amount, TransactionType.DEPOSIT)) {
+			account.deposit(amount);
+			return false;
+		}
+		persistAccount(account);
+		return true;
 	}
 
 	public boolean transferFromBank(UUID from, UUID to, long amount) {
@@ -403,10 +470,32 @@ public final class BankService {
 	}
 
 	public void applyTermInterest(double baseRate) {
+		long intervalMs = interestIntervalMs();
+		double intervalsInTerm = Math.max(1.0, TERM_LENGTH_MS / (double) intervalMs);
+		long now = System.currentTimeMillis();
 		for (BankAccount account : termAccounts.values()) {
-			double rate = account.interestRate() > 0 ? account.interestRate() : baseRate;
-			account.applyInterest(rate / EconomyConfig.interestIntervalTicks() * 20);
+			if (account.balance() <= 0) {
+				continue;
+			}
+			if (account.maturesAt() > 0 && now >= account.maturesAt()) {
+				continue;
+			}
+			double totalReturn = account.interestRate() > 0 ? account.interestRate() : baseRate;
+			double perInterval = totalReturn / intervalsInTerm;
+			long before = account.balance();
+			account.applyInterest(perInterval);
+			if (account.balance() != before) {
+				persistAccount(account);
+			}
 		}
+	}
+
+	public static long interestIntervalMs() {
+		return EconomyConfig.interestIntervalTicks() * 50L;
+	}
+
+	public static int interestIntervalSeconds() {
+		return Math.max(1, EconomyConfig.interestIntervalTicks() / 20);
 	}
 
 	public boolean adminSetBalance(UUID owner, BankAccountType type, long balanceMg) throws SQLException {

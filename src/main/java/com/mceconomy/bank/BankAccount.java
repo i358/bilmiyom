@@ -77,11 +77,15 @@ public final class BankAccount {
 		return drained;
 	}
 
-	public void applyInterest(double rate) {
-		long interest = (long) Math.floor(balance * rate);
-		if (interest > 0) {
-			deposit(interest);
+	public boolean applyInterest(double rate) {
+		if (rate <= 0 || balance <= 0) {
+			return false;
 		}
+		long interest = Math.round(balance * rate);
+		if (interest <= 0) {
+			interest = 1;
+		}
+		return deposit(interest);
 	}
 
 	public void setBalance(long newBalance) {

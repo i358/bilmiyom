@@ -22,8 +22,8 @@ public final class EconomyPlayerActionDispatcher {
 			case "bank/open-checking" -> DashboardActionService.bankOpenChecking(uuid);
 			case "bank/open-term" -> DashboardActionService.bankOpenTerm(uuid);
 			case "bank/transfer" -> DashboardActionService.bankTransfer(uuid, text(body, "target"), displayMcVal(body, 0));
-			case "bank/wallet-deposit" -> DashboardActionService.bankWalletDeposit(uuid, displayMcVal(body, 0));
-			case "bank/wallet-withdraw" -> DashboardActionService.bankWalletWithdraw(uuid, displayMcVal(body, 0));
+			case "bank/wallet-deposit" -> DashboardActionService.bankWalletDeposit(uuid, displayMcVal(body, 0), text(body, "account"));
+			case "bank/wallet-withdraw" -> DashboardActionService.bankWalletWithdraw(uuid, displayMcVal(body, 0), text(body, "account"));
 			case "bank/deposit-ingots" -> requireOnline(player,
 					p -> DashboardActionService.bankDepositIngots(p, intVal(body, "ingots", 0)));
 			case "bank/withdraw-ingots" -> requireOnline(player,

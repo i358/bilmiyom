@@ -53,6 +53,12 @@ public final class PriceHistoryService {
 			repository.record("MACRO", "municipal_budget", manager.centralBank().getMunicipalBudgetMg(), now);
 			long fiatScaled = (long) (manager.centralBank().getFiatStrength() * 10_000);
 			repository.record("MACRO", "fiat_strength", fiatScaled, now);
+			for (var profile : manager.profiles().values()) {
+				long termBal = manager.bankService().getTermBalanceMg(profile.uuid());
+				if (termBal > 0) {
+					repository.record("TERM", profile.uuid().toString(), termBal, now);
+				}
+			}
 			repository.pruneOlderThan(now - 7L * 24 * 60 * 60 * 1000);
 		} catch (SQLException e) {
 			McEconomyMod.LOGGER.error("Fiyat geçmişi kaydedilemedi", e);

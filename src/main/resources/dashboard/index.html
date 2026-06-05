@@ -172,6 +172,11 @@
               <select id="chartSymbol"></select>
               <canvas id="priceChart"></canvas>
             </div>
+            <div class="panel-card span2 chart-box">
+              <h3>Vadeli Hesap Bakiyesi</h3>
+              <canvas id="termBalanceChart"></canvas>
+              <p class="hint" id="termChartHint">Vadeli hesap yok veya henüz kayıt oluşmadı.</p>
+            </div>
             <div class="panel-card chart-box">
               <h3>Ekonomi Endeksi</h3>
               <canvas id="indexChart"></canvas>
@@ -307,11 +312,17 @@
             </div>
             <div class="panel-card">
               <h3>Cüzdan ↔ Banka</h3>
+              <label>Hedef hesap</label>
+              <select id="walletAccountType">
+                <option value="checking">Vadesiz</option>
+                <option value="term">Vadeli</option>
+              </select>
               <label>Tutar ($)</label><input id="walletMoveGrams" type="number" min="1" value="10">
               <div class="form-row">
                 <button class="btn btn-accent" id="walletToBankBtn">Bankaya Yatır</button>
                 <button class="btn btn-ghost" id="bankToWalletBtn">Bankadan Çek</button>
               </div>
+              <p class="hint" id="walletAccountHint">Vadesiz: anında erişim. Vadeli: vade dolana kadar kilitli, daha yüksek faiz.</p>
             </div>
           </div>
         </section>
@@ -320,20 +331,25 @@
         <section id="page-bank" class="page">
           <div class="grid-2">
             <div class="panel-card">
-              <h3>Hesap İşlemleri</h3>
-              <div class="form-row">
-                <button class="btn btn-accent" id="openCheckingBtn">Vadesiz Hesap Aç</button>
-                <button class="btn btn-ghost" id="openTermBtn">Vadeli Hesap Aç</button>
-              </div>
+              <h3>Vadesiz Hesap</h3>
+              <p class="hint" id="checkingBalanceLine">Bakiye: —</p>
+              <button class="btn btn-accent btn-block" id="openCheckingBtn">Vadesiz Hesap Aç</button>
               <hr style="border-color:var(--border);margin:16px 0">
               <h3>Banka Transferi</h3>
+              <p class="hint">Transferler vadesiz hesaptan yapılır.</p>
               <label>Alıcı</label><input id="bankTransferTarget" placeholder="Oyuncu adı">
               <label>Tutar ($)</label><input id="bankTransferGrams" type="number" min="1" value="10">
               <button class="btn btn-gold btn-block" id="bankTransferBtn">Transfer Et</button>
             </div>
             <div class="panel-card">
+              <h3>Vadeli Hesap</h3>
+              <p class="hint" id="termBalanceLine">Bakiye: —</p>
+              <p class="hint" id="termInterestLine"></p>
+              <p class="hint" id="termMaturityLine"></p>
+              <button class="btn btn-ghost btn-block" id="openTermBtn">Vadeli Hesap Aç</button>
+              <hr style="border-color:var(--border);margin:16px 0">
               <h3>Fiziksel Altın</h3>
-              <p class="hint warn-text">Envanter işlemi — oyunda çevrimiçi olmalısınız</p>
+              <p class="hint warn-text">Külçe yatırma vadesiz hesaba gider — oyunda çevrimiçi olmalısınız</p>
               <label>Külçe Adedi</label><input id="ingotCount" type="number" min="1" value="1">
               <div class="form-row">
                 <button class="btn btn-accent" id="depositIngotsBtn">Külçe Yatır</button>

@@ -1,6 +1,10 @@
 package com.mceconomy.tax;
 
 import com.mceconomy.McEconomyMod;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
+import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.persistence.DatabaseManager;
 
 import java.sql.PreparedStatement;
@@ -12,6 +16,7 @@ public final class CentralBank {
 	public static final long MAX_MUNICIPAL_BUDGET_MG = 10_000_000_000_000_000L;
 
 	private final DatabaseManager database;
+	private EconomyEventService economyEventService;
 	private double baseRate;
 	private long moneySupply;
 	private double inflationRate;
@@ -27,6 +32,10 @@ public final class CentralBank {
 
 	public CentralBank(DatabaseManager database) {
 		this.database = database;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public void load() throws SQLException {
@@ -157,6 +166,10 @@ public final class CentralBank {
 	}
 
 	public void addMunicipalBudget(long amount) {
+		addMunicipalBudget(amount, "BUDGET", "Belediye butcesi artisi");
+	}
+
+	public void addMunicipalBudget(long amount, String source, String description) {
 		if (amount <= 0) {
 			return;
 		}
@@ -170,6 +183,10 @@ public final class CentralBank {
 		} else {
 			municipalBudgetMg = next;
 		}
+		if (economyEventService != null) {
+			economyEventService.recordMunicipal(EconomyEventCategory.TAX_IN, EconomyEventDirection.IN, amount,
+					source, description + ": " + GoldStandard.formatMilligrams(amount));
+		}
 	}
 
 	public void setMunicipalBudgetMg(long municipalBudgetMg) {
@@ -177,11 +194,19 @@ public final class CentralBank {
 	}
 
 	public boolean spendMunicipalBudget(long amount) {
+		return spendMunicipalBudget(amount, "SPEND", "Belediye harcamasi");
+	}
+
+	public boolean spendMunicipalBudget(long amount, String source, String description) {
 		long current = getMunicipalBudgetMg();
 		if (amount <= 0 || current < amount) {
 			return false;
 		}
 		municipalBudgetMg = current - amount;
+		if (economyEventService != null) {
+			economyEventService.recordMunicipal(EconomyEventCategory.SPEND_OUT, EconomyEventDirection.OUT, amount,
+					source, description + ": " + GoldStandard.formatMilligrams(amount));
+		}
 		return true;
 	}
 

@@ -115,6 +115,7 @@ public final class EconomyManager {
 	private PlayerRepository playerRepository;
 	private CurrencyService currencyService;
 	private TransactionLedger ledger;
+	private EconomyEventService economyEventService;
 	private BankService bankService;
 	private LoanManager loanManager;
 	private MarketService marketService;
@@ -193,11 +194,19 @@ public final class EconomyManager {
 
 			profiles.putAll(playerRepository.loadAll());
 			ledger = new TransactionLedger(database);
+			com.mceconomy.persistence.repo.EconomyEventRepository economyEventRepository =
+					new com.mceconomy.persistence.repo.EconomyEventRepository(database.connection());
+			com.mceconomy.persistence.repo.TransactionRepository transactionRepository =
+					new com.mceconomy.persistence.repo.TransactionRepository(database.connection());
+			economyEventService = new EconomyEventService(economyEventRepository, transactionRepository, profiles);
 			MasakRepository masakRepository = new MasakRepository(database.connection());
 			masakService = new MasakService(profiles, ledger, masakRepository);
+			masakService.bindEconomyEventService(economyEventService);
 			currencyService = new CurrencyService(profiles, ledger);
 			currencyService.bindMasak(masakService);
+			currencyService.bindEconomyEventService(economyEventService);
 			taxService = new TaxService();
+			taxService.bindEconomyEventService(economyEventService);
 			bankService = new BankService(bankRepository, currencyService);
 			currencyService.bindBank(bankService);
 			bankService.load();
@@ -218,6 +227,7 @@ public final class EconomyManager {
 			launderingService = new LaunderingService(currencyService, masakService);
 
 			centralBank = new CentralBank(database);
+			centralBank.bindEconomyEventService(economyEventService);
 			centralBank.load();
 			GoldStandard.setGoldFactor(centralBank.getGoldFactor());
 			GoldStandard.setFiatStrength(centralBank.getFiatStrength());
@@ -226,6 +236,7 @@ public final class EconomyManager {
 			eventManager = new EconomyEventManager();
 
 			companyManager = new CompanyManager(companyRepository, currencyService);
+			companyManager.bindEconomyEventService(economyEventService);
 			companyManager.load();
 
 			CompanyStashRepository companyStashRepository = new CompanyStashRepository(database.connection());
@@ -247,6 +258,7 @@ public final class EconomyManager {
 			playerEmploymentService = new PlayerEmploymentService(
 					playerEmploymentRepository, salaryPaymentRepository, profiles,
 					companyManager, currencyService, workforceService, taxService);
+			playerEmploymentService.bindEconomyEventService(economyEventService);
 			playerEmploymentService.load();
 			workforceService.bindPlayerEmployment(playerEmploymentService);
 			workforceService.bindTaxService(taxService);
@@ -272,6 +284,7 @@ public final class EconomyManager {
 
 			TradeRepository tradeRepository = new TradeRepository(database.connection());
 			playerTradeService = new PlayerTradeService(tradeRepository, currencyService, centralBank);
+			playerTradeService.bindEconomyEventService(economyEventService);
 
 			GuildRepository guildRepository = new GuildRepository(database.connection());
 			guildService = new GuildService(guildRepository, currencyService);
@@ -280,15 +293,18 @@ public final class EconomyManager {
 			exchangeTaxService = new ExchangeTaxService(taxService);
 			exchangeService = new ExchangeService(exchangeRepository, currencyService, companyManager, masakService,
 					exchangeTaxService);
+			exchangeService.bindEconomyEventService(economyEventService);
 			exchangeService.load();
 			companyManager.bindExchangeTaxService(exchangeTaxService);
 
 			ExchangeCollateralRepository collateralRepository = new ExchangeCollateralRepository(database.connection());
 			exchangeCollateralService = new ExchangeCollateralService(collateralRepository, currencyService);
+			exchangeCollateralService.bindEconomyEventService(economyEventService);
 
 			LeverageRepository leverageRepository = new LeverageRepository(database.connection());
 			leverageService = new LeverageService(leverageRepository, exchangeService,
 					exchangeCollateralService, exchangeTaxService);
+			leverageService.bindEconomyEventService(economyEventService);
 			leverageService.bindServer(server);
 			leverageService.load();
 
@@ -330,6 +346,7 @@ public final class EconomyManager {
 			mayorService.load();
 			mayorService.ensureElectionScheduled();
 			municipalEconomyService = new MunicipalEconomyService(centralBank);
+			municipalEconomyService.bindEconomyEventService(economyEventService);
 			goldReserveService.bindDepotLedger(depotLedgerService);
 			bankSecurityService = new BankSecurityService(server, facilityDepotService);
 			SecurityCameraRepository cameraRepository = new SecurityCameraRepository(database.connection());
@@ -632,6 +649,10 @@ public final class EconomyManager {
 
 	public Map<UUID, PlayerEconomyProfile> profiles() {
 		return profiles;
+	}
+
+	public EconomyEventService economyEventService() {
+		return economyEventService;
 	}
 
 	public CurrencyService currencyService() {

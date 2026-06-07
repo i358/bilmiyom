@@ -2,6 +2,9 @@ package com.mceconomy.exchange;
 
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.config.EconomyConfig;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.persistence.repo.LeverageRepository;
 import net.minecraft.network.chat.Component;
@@ -27,6 +30,7 @@ public final class LeverageService {
 	private final ExchangeTaxService exchangeTaxService;
 	private final LeveragePool pool = new LeveragePool();
 	private MinecraftServer server;
+	private EconomyEventService economyEventService;
 
 	private final List<LeveragePosition> positions = new ArrayList<>();
 	private final Set<String> marginCallNotified = new HashSet<>();
@@ -42,6 +46,10 @@ public final class LeverageService {
 
 	public void bindServer(MinecraftServer server) {
 		this.server = server;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public void load() throws SQLException {
@@ -146,6 +154,8 @@ public final class LeverageService {
 			McEconomyMod.LOGGER.error("Kaldirac pozisyonu kaydedilemedi", e);
 			return "Pozisyon acilamadi.";
 		}
+		logLeverage(owner, symbol, totalCost, "OPEN",
+				(isLong ? "LONG" : "SHORT") + " " + symbol.toUpperCase() + " " + leverage + "x acildi");
 		String feeNote = openFee > 0 ? " (acilis ucreti " + GoldStandard.formatMilligrams(openFee) + ")" : "";
 		return "ACILDI: " + (isLong ? "LONG" : "SHORT") + " " + symbol.toUpperCase()
 				+ " " + leverage + "x, teminat " + GoldStandard.formatMilligrams(marginMg) + feeNote;
@@ -173,6 +183,8 @@ public final class LeverageService {
 			McEconomyMod.LOGGER.error("Teminat guncelleme", e);
 			return "Teminat kaydedilemedi.";
 		}
+		logLeverage(owner, pos.symbol(), amountMg, "ADD_MARGIN",
+				pos.symbol() + " pozisyonuna teminat eklendi");
 		return "Teminat eklendi: " + GoldStandard.formatMilligrams(amountMg);
 	}
 
@@ -194,6 +206,7 @@ public final class LeverageService {
 			long pnl = pos.pnlMg(price);
 			long payout = settleClose(pos, price, pos.sizeMilliTokens(), pos.marginMg());
 			closeInternal(pos, payout);
+			logLeverageClose(owner, pos.symbol(), payout, pnl);
 			String capped = payout < equity ? " (havuz limiti)" : "";
 			String stopajNote = pnl > 0 ? " stopaj " + GoldStandard.formatMilligrams(
 					exchangeTaxService.leverageProfitStopajMg(pnl)) : "";
@@ -322,6 +335,8 @@ public final class LeverageService {
 				continue;
 			}
 			pool.credit(fee);
+			logLeverage(pos.owner(), pos.symbol(), fee, "FUNDING",
+					pos.symbol() + " funding ucreti");
 		}
 		savePool();
 		long now = System.currentTimeMillis();
@@ -415,6 +430,31 @@ public final class LeverageService {
 		ServerPlayer player = server.getPlayerList().getPlayer(owner);
 		if (player != null) {
 			player.sendSystemMessage(Component.literal(message));
+		}
+	}
+
+	private void logLeverage(UUID owner, String symbol, long amountMg, String source, String description) {
+		if (economyEventService == null || amountMg <= 0) {
+			return;
+		}
+		economyEventService.recordPersonal(owner, EconomyEventCategory.LEVERAGE, EconomyEventDirection.OUT,
+				amountMg, null, symbol, 0, source, description + ": " + GoldStandard.formatMilligrams(amountMg));
+	}
+
+	private void logLeverageClose(UUID owner, String symbol, long payoutMg, long pnlMg) {
+		if (economyEventService == null) {
+			return;
+		}
+		if (payoutMg > 0) {
+			economyEventService.recordPersonal(owner, EconomyEventCategory.LEVERAGE, EconomyEventDirection.IN,
+					payoutMg, null, symbol, 0, "CLOSE",
+					symbol + " pozisyon kapanisi — iade: " + GoldStandard.formatMilligrams(payoutMg));
+		}
+		if (pnlMg != 0) {
+			economyEventService.recordPersonal(owner, EconomyEventCategory.LEVERAGE,
+					pnlMg > 0 ? EconomyEventDirection.IN : EconomyEventDirection.OUT, Math.abs(pnlMg),
+					null, symbol, 0, "PNL",
+					symbol + " K/Z: " + (pnlMg >= 0 ? "+" : "") + GoldStandard.formatMilligrams(pnlMg));
 		}
 	}
 

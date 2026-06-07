@@ -4,7 +4,11 @@ import com.mceconomy.McEconomyMod;
 import com.mceconomy.company.Company;
 import com.mceconomy.company.CompanyManager;
 import com.mceconomy.config.EconomyConfig;
+import com.mceconomy.bootstrap.EconomyBootstrap;
 import com.mceconomy.economy.CurrencyService;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
 import com.mceconomy.persistence.repo.ExchangeRepository;
@@ -35,6 +39,7 @@ public final class ExchangeService {
 	private final CompanyManager companyManager;
 	private final MasakService masakService;
 	private final ExchangeTaxService exchangeTaxService;
+	private EconomyEventService economyEventService;
 
 	public ExchangeService(ExchangeRepository repository, CurrencyService currencyService,
 			CompanyManager companyManager, MasakService masakService, ExchangeTaxService exchangeTaxService) {
@@ -43,6 +48,10 @@ public final class ExchangeService {
 		this.companyManager = companyManager;
 		this.masakService = masakService;
 		this.exchangeTaxService = exchangeTaxService;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public void load() throws SQLException {
@@ -304,6 +313,7 @@ public final class ExchangeService {
 		holding.add(amount, cost);
 		persistHolding(token, buyer, holding);
 		repository.saveToken(token);
+		logTokenTrade(buyer, token, amount, cost, commission, true);
 		return true;
 	}
 
@@ -360,7 +370,33 @@ public final class ExchangeService {
 			persistHolding(token, seller, holding);
 		}
 		repository.saveToken(token);
+		logTokenTrade(seller, token, amount, netPayout, commission + profitStopaj, false);
 		return true;
+	}
+
+	private void logTokenTrade(UUID trader, ExchangeToken token, int amount, long tradeAmountMg, long feesMg,
+			boolean buy) {
+		if (economyEventService == null) {
+			return;
+		}
+		String traderName = economyEventService.resolveName(trader);
+		String action = buy ? "aldi" : "satti";
+		economyEventService.recordPersonal(trader, EconomyEventCategory.EXCHANGE,
+				buy ? EconomyEventDirection.OUT : EconomyEventDirection.IN, tradeAmountMg + feesMg,
+				null, token.symbol(), amount, buy ? "SPOT_BUY" : "SPOT_SELL",
+				traderName + " " + amount + "x " + token.symbol() + " " + action
+						+ " (" + GoldStandard.formatMilligrams(tradeAmountMg) + ")");
+		if (feesMg > 0) {
+			economyEventService.recordPersonal(trader, EconomyEventCategory.TAX_FEE, EconomyEventDirection.OUT,
+					feesMg, "EXCHANGE_FEE", "Borsa komisyon/stopaj: " + GoldStandard.formatMilligrams(feesMg));
+		}
+		UUID creator = token.creatorUuid();
+		if (creator != null && !creator.equals(trader) && !creator.equals(EconomyBootstrap.SYSTEM_OWNER)) {
+			economyEventService.recordPersonal(creator, EconomyEventCategory.COIN_CREATOR,
+					buy ? EconomyEventDirection.IN : EconomyEventDirection.OUT, tradeAmountMg,
+					trader, token.symbol(), amount, buy ? "SPOT_BUY" : "SPOT_SELL",
+					traderName + " sizin " + token.symbol() + " coininizden " + amount + " adet " + action);
+		}
 	}
 
 	private double slippageImpact(ExchangeToken token, int amount, double baseImpact) {

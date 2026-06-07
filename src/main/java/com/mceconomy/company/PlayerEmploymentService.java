@@ -3,6 +3,9 @@ package com.mceconomy.company;
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
 import com.mceconomy.tax.TaxService;
@@ -36,6 +39,7 @@ public final class PlayerEmploymentService {
 	private final CurrencyService currencyService;
 	private final NpcWorkforceService npcWorkforceService;
 	private final TaxService taxService;
+	private EconomyEventService economyEventService;
 
 	public PlayerEmploymentService(PlayerEmploymentRepository repository, SalaryPaymentRepository salaryPaymentRepository,
 			Map<UUID, PlayerEconomyProfile> profiles, CompanyManager companyManager,
@@ -47,6 +51,10 @@ public final class PlayerEmploymentService {
 		this.currencyService = currencyService;
 		this.npcWorkforceService = npcWorkforceService;
 		this.taxService = taxService;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public void load() throws SQLException {
@@ -475,7 +483,21 @@ public final class PlayerEmploymentService {
 			return false;
 		}
 		if (paid && tax > 0) {
-			taxService.collectTax(tax);
+			taxService.collectTax(tax, "INCOME_TAX", "Maas gelir vergisi");
+		}
+		if (paid && economyEventService != null) {
+			economyEventService.recordPersonal(playerUuid, EconomyEventCategory.EMPLOYMENT,
+					EconomyEventDirection.IN, net, company.ownerUuid(), company.name(), 0, "SALARY",
+					company.name() + " maasi: " + GoldStandard.formatMilligrams(net));
+			economyEventService.recordCompany(company.id(), company.ownerUuid(),
+					EconomyEventCategory.TREASURY_OUT, EconomyEventDirection.OUT, gross,
+					playerUuid, company.name(), 0, "SALARY",
+					"Maas odemesi: " + economyEventService.resolveName(playerUuid));
+			if (tax > 0) {
+				economyEventService.recordPersonal(playerUuid, EconomyEventCategory.TAX_FEE,
+						EconomyEventDirection.OUT, tax, "INCOME_TAX",
+						"Maas vergisi: " + GoldStandard.formatMilligrams(tax));
+			}
 		}
 		return paid;
 	}

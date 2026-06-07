@@ -35,6 +35,7 @@
         <button class="nav-item" data-page="map"><span class="icon">🗺</span> Canlı Harita</button>
         <button class="nav-item" data-page="bulletins"><span class="icon">📰</span> Bülten Arşivi</button>
         <button class="nav-item" data-page="charts"><span class="icon">📈</span> Grafikler</button>
+        <button class="nav-item" data-page="ledger"><span class="icon">📒</span> Finans Defteri</button>
         <button class="nav-item" data-page="inventory"><span class="icon">🎒</span> Envanter</button>
         <button class="nav-item" data-page="docs"><span class="icon">📖</span> Rehber</button>
       </div>
@@ -149,6 +150,50 @@
               </div>
             </div>
             <div id="bulletinArchive"><p class="hint">Yükleniyor...</p></div>
+          </div>
+        </section>
+
+        <!-- FINANS DEFTERI -->
+        <section id="page-ledger" class="page">
+          <div class="panel-card" style="margin-bottom:16px">
+            <div class="form-row" style="gap:8px;flex-wrap:wrap;margin-bottom:12px">
+              <button type="button" class="btn btn-ghost btn-sm ledger-scope active" data-scope="personal">Kişisel</button>
+              <button type="button" class="btn btn-ghost btn-sm ledger-scope" data-scope="company">Şirketlerim</button>
+              <button type="button" class="btn btn-ghost btn-sm ledger-scope" data-scope="municipal">Belediye</button>
+            </div>
+            <div id="ledgerCompanyRow" class="form-row hidden" style="gap:8px;margin-bottom:12px">
+              <label>Şirket</label>
+              <select id="ledgerCompanySelect"></select>
+            </div>
+            <div id="ledgerSummary" class="stat-grid" style="margin-bottom:16px"></div>
+            <div class="chart-grid" style="margin-bottom:16px">
+              <div class="panel-card chart-box">
+                <h3>Günlük gelir / gider</h3>
+                <canvas id="ledgerFlowChart"></canvas>
+              </div>
+              <div class="panel-card chart-box">
+                <h3>Kategori dağılımı</h3>
+                <canvas id="ledgerCategoryChart"></canvas>
+              </div>
+            </div>
+            <div id="ledgerCategoryChips" class="form-row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+            <div class="table-wrap">
+              <table class="data-table" id="ledgerEventTable">
+                <thead>
+                  <tr>
+                    <th>Zaman</th>
+                    <th>Açıklama</th>
+                    <th>Karşı taraf</th>
+                    <th>Varlık</th>
+                    <th>Miktar</th>
+                    <th>Tutar</th>
+                    <th>Yön</th>
+                  </tr>
+                </thead>
+                <tbody id="ledgerEventBody"><tr><td colspan="7" class="hint">Yükleniyor...</td></tr></tbody>
+              </table>
+            </div>
+            <p class="hint" id="ledgerMeta" style="margin-top:8px">Son 100 kayıt</p>
           </div>
         </section>
 

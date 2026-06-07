@@ -3,6 +3,9 @@ package com.mceconomy.company;
 import com.mceconomy.McEconomyMod;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
 import com.mceconomy.exchange.ExchangeTaxService;
@@ -26,6 +29,7 @@ public final class CompanyManager {
 	private final CompanyRepository repository;
 	private final CurrencyService currencyService;
 	private ExchangeTaxService exchangeTaxService;
+	private EconomyEventService economyEventService;
 	private int economyTickCounter;
 
 	public CompanyManager(CompanyRepository repository, CurrencyService currencyService) {
@@ -35,6 +39,10 @@ public final class CompanyManager {
 
 	public void bindExchangeTaxService(ExchangeTaxService exchangeTaxService) {
 		this.exchangeTaxService = exchangeTaxService;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public void load() throws SQLException {
@@ -179,6 +187,7 @@ public final class CompanyManager {
 		holding.add(amount);
 		repository.save(company);
 		repository.saveShare(holding);
+		logShareTrade(company, buyer, amount, cost, commission, true);
 		return true;
 	}
 
@@ -201,7 +210,37 @@ public final class CompanyManager {
 		currencyService.deposit(seller, payout - commission, TransactionType.COMPANY);
 		repository.save(company);
 		repository.saveShare(holding);
+		logShareTrade(company, seller, amount, payout, commission, false);
 		return true;
+	}
+
+	private void logShareTrade(Company company, UUID trader, int amount, long tradeMg, long commission, boolean buy) {
+		if (economyEventService == null) {
+			return;
+		}
+		String traderName = economyEventService.resolveName(trader);
+		String label = company.ticker() != null ? company.ticker() : company.name();
+		String action = buy ? "aldi" : "satti";
+		economyEventService.recordPersonal(trader, EconomyEventCategory.SHARES,
+				buy ? EconomyEventDirection.OUT : EconomyEventDirection.IN, tradeMg + commission,
+				company.ownerUuid(), label, amount, buy ? "SHARE_BUY" : "SHARE_SELL",
+				traderName + " " + company.name() + " hissesinden " + amount + " adet " + action);
+		if (commission > 0) {
+			economyEventService.recordPersonal(trader, EconomyEventCategory.TAX_FEE, EconomyEventDirection.OUT,
+					commission, "SHARE_FEE", "Hisse komisyonu: " + GoldStandard.formatMilligrams(commission));
+		}
+		if (!company.ownerUuid().equals(trader)) {
+			economyEventService.recordPersonal(company.ownerUuid(), EconomyEventCategory.SHARE_OWNER,
+					buy ? EconomyEventDirection.IN : EconomyEventDirection.OUT, tradeMg,
+					trader, label, amount, buy ? "SHARE_BUY" : "SHARE_SELL",
+					traderName + " sizin " + company.name() + " sirketinizden " + amount + " hisse " + action);
+		}
+		economyEventService.recordCompany(company.id(), company.ownerUuid(),
+				buy ? EconomyEventCategory.TREASURY_IN : EconomyEventCategory.TREASURY_OUT,
+				buy ? EconomyEventDirection.IN : EconomyEventDirection.OUT, tradeMg,
+				trader, label, amount, buy ? "SHARE_BUY" : "SHARE_SELL",
+				(buy ? "Hisse satisi geliri: " : "Hisse geri alim odemesi: ")
+						+ traderName + " — " + amount + " adet");
 	}
 
 	public int getShareCount(UUID player, Company company) {

@@ -145,6 +145,47 @@ public final class MigrationRunner {
 			migrateV30();
 			setVersion(30);
 		}
+		if (current < 31) {
+			migrateV31();
+			setVersion(31);
+		}
+	}
+
+	private void migrateV31() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V31: finans defteri economy_events...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS economy_events (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						scope TEXT NOT NULL,
+						owner_uuid TEXT,
+						company_id INTEGER,
+						category TEXT NOT NULL,
+						direction TEXT NOT NULL,
+						amount_mg INTEGER NOT NULL,
+						counterparty_uuid TEXT,
+						counterparty_name TEXT,
+						asset_symbol TEXT,
+						quantity INTEGER NOT NULL DEFAULT 0,
+						source TEXT,
+						description TEXT NOT NULL,
+						metadata_json TEXT,
+						timestamp INTEGER NOT NULL
+					)
+					""");
+			stmt.execute("""
+					CREATE INDEX IF NOT EXISTS idx_economy_events_personal
+					ON economy_events(scope, owner_uuid, category, timestamp DESC)
+					""");
+			stmt.execute("""
+					CREATE INDEX IF NOT EXISTS idx_economy_events_company
+					ON economy_events(scope, company_id, category, timestamp DESC)
+					""");
+			stmt.execute("""
+					CREATE INDEX IF NOT EXISTS idx_economy_events_municipal
+					ON economy_events(scope, category, timestamp DESC)
+					""");
+		}
 	}
 
 	private void migrateV30() throws SQLException {

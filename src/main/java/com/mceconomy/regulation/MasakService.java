@@ -1,6 +1,9 @@
 package com.mceconomy.regulation;
 
 import com.mceconomy.config.EconomyConfig;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionLedger;
 import com.mceconomy.economy.TransactionType;
@@ -20,6 +23,7 @@ public final class MasakService {
 	private final Map<UUID, PlayerEconomyProfile> profiles;
 	private final TransactionLedger ledger;
 	private final MasakRepository repository;
+	private EconomyEventService economyEventService;
 	private final Map<UUID, Deque<Long>> transferTimestamps = new ConcurrentHashMap<>();
 	private final Map<UUID, Integer> blackMarketActivity = new ConcurrentHashMap<>();
 	private final Map<UUID, Integer> launderingAttempts = new ConcurrentHashMap<>();
@@ -29,6 +33,10 @@ public final class MasakService {
 		this.profiles = profiles;
 		this.ledger = ledger;
 		this.repository = repository;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public void onTransfer(UUID player, long amountMg) {
@@ -193,6 +201,10 @@ public final class MasakService {
 			profile.dirtyWallet().withdraw(Math.min(profile.dirtyWallet().balance(), remaining));
 		}
 		ledger.record(player, null, fineMg, TransactionType.MASAK_FINE, "masak_ceza");
+		if (economyEventService != null) {
+			economyEventService.recordPersonal(player, EconomyEventCategory.MASAK, EconomyEventDirection.OUT, fineMg,
+					"MASAK_FINE", "MASAK cezasi: " + GoldStandard.formatMilligrams(fineMg));
+		}
 		profile.creditScore().adjust(-20);
 	}
 

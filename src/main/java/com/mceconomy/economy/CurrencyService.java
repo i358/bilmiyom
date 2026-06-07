@@ -14,6 +14,7 @@ public final class CurrencyService {
 	private final TransactionLedger ledger;
 	private MasakService masakService;
 	private BankService bankService;
+	private EconomyEventService economyEventService;
 
 	public CurrencyService(Map<UUID, PlayerEconomyProfile> profiles, TransactionLedger ledger) {
 		this.profiles = profiles;
@@ -26,6 +27,10 @@ public final class CurrencyService {
 
 	public void bindBank(BankService bankService) {
 		this.bankService = bankService;
+	}
+
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
 	}
 
 	public long getBalance(UUID uuid) {
@@ -48,6 +53,7 @@ public final class CurrencyService {
 			return false;
 		}
 		ledger.record(null, uuid, amount, type, null);
+		logWalletEvent(uuid, EconomyEventDirection.IN, amount, type, null, uuid);
 		if (bankService != null) {
 			bankService.sweepCheckingTowardDebt(uuid);
 		}
@@ -87,6 +93,7 @@ public final class CurrencyService {
 			return false;
 		}
 		ledger.record(null, uuid, amount, type, "dirty");
+		logWalletEvent(uuid, EconomyEventDirection.IN, amount, type, "dirty", uuid);
 		return true;
 	}
 
@@ -99,6 +106,7 @@ public final class CurrencyService {
 			return false;
 		}
 		ledger.record(uuid, null, amount, type, null);
+		logWalletEvent(uuid, EconomyEventDirection.OUT, amount, type, null, uuid);
 		return true;
 	}
 
@@ -111,6 +119,7 @@ public final class CurrencyService {
 			return false;
 		}
 		ledger.record(uuid, null, amount, type, "dirty");
+		logWalletEvent(uuid, EconomyEventDirection.OUT, amount, type, "dirty", uuid);
 		return true;
 	}
 
@@ -134,6 +143,8 @@ public final class CurrencyService {
 			return false;
 		}
 		ledger.record(from, to, amount, TransactionType.TRANSFER, null);
+		logWalletEvent(from, EconomyEventDirection.OUT, amount, TransactionType.TRANSFER, null, to);
+		logWalletEvent(to, EconomyEventDirection.IN, amount, TransactionType.TRANSFER, null, from);
 		if (masakService != null) {
 			masakService.onTransfer(from, amount);
 		}
@@ -168,5 +179,22 @@ public final class CurrencyService {
 		profile.dirtyWallet().setBalance(balanceMg);
 		ledger.record(null, uuid, balanceMg, TransactionType.ADMIN_OP, "dirty-set");
 		return true;
+	}
+
+	private void logWalletEvent(UUID owner, EconomyEventDirection direction, long amount, TransactionType type,
+			String meta, UUID counterparty) {
+		if (economyEventService == null) {
+			return;
+		}
+		EconomyEventCategory category = economyEventService.categoryForTransactionType(type);
+		String cpName = economyEventService.resolveName(counterparty);
+		String desc = (direction == EconomyEventDirection.IN ? "Gelir" : "Gider")
+				+ " — " + type.name() + ": " + GoldStandard.formatMilligrams(amount)
+				+ (cpName != null && !cpName.equals(owner.toString().substring(0, 8))
+						? " (" + (direction == EconomyEventDirection.IN ? "kaynak: " : "hedef: ") + cpName + ")"
+						: "")
+				+ (meta != null ? " [" + meta + "]" : "");
+		economyEventService.recordPersonal(owner, category, direction, amount, counterparty, null, 0,
+				type.name(), desc);
 	}
 }

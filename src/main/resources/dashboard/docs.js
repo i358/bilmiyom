@@ -56,6 +56,18 @@ const DOCS_HTML = `
 </div>
 
 <div class="doc-section">
+  <h3>📒 Finans Defteri</h3>
+  <ul>
+    <li><strong>Kişisel:</strong> Tüm gelir ve giderleriniz kategorilere ayrılmış event log olarak listelenir (cüzdan, market, borsa, maaş, vergi, takas vb.).</li>
+    <li><strong>Coin aktivitesi:</strong> Oluşturduğunuz coinde kim alım/satım yaptıysa karşı taraf adı ve miktar görünür.</li>
+    <li><strong>Şirketimden hisse:</strong> Kendi şirketinizden kim hisse aldı/sattı kayıtları ayrı sekmede.</li>
+    <li><strong>Şirketlerim:</strong> Sahip olduğunuz şirketlerin kasa giriş/çıkış defteri (hisse satışı, maaş vb.).</li>
+    <li><strong>Belediye:</strong> Vergi geliri, harcama ve piyasa desteği — tüm oyuncular görebilir; bütçe trendi grafikte.</li>
+    <li><strong>Grafikler:</strong> Son 30 gün günlük gelir/gider ve kategori dağılımı; her kategori için son 100 kayıt.</li>
+  </ul>
+</div>
+
+<div class="doc-section">
   <h3>🏢 Şirket, Hisse & Çalışanlar</h3>
   <ul>
     <li><strong>Şirket Kur:</strong> Yeterli servete sahipseniz şirket kurun.</li>

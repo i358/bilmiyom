@@ -238,6 +238,15 @@ Dosya: `src/main/java/com/mceconomy/config/EconomyConfig.java` (+ `config/mcecon
 
 Panel alanları (`/api/me`): `exchangeCollateralMg`, `exchangeCollateralLockedMg`, `exchangeCollateralAvailableMg`, `leveragePositions[]`.
 
+### Finans Defteri
+
+- **Sayfa**: Genel → **Finans Defteri** (`/dashboard`, `data-page="ledger"`)
+- **Sekmeler**: Kişisel gelir/gider, sahip olunan şirket kasası, belediye (herkese açık)
+- **Kategoriler**: Cüzdan, borsa, coin aktivitesi (kim sizin coininizi aldı/sattı), hisse, maaş, vergi, takas vb.
+- **Her kategori**: Son **100** kayıt; günlük gelir/gider ve kategori pasta grafikleri
+- **API**: `GET /api/finance/personal/events`, `.../charts`, `.../company/events`, `.../municipal/events`
+- **Geçmiş**: Eski cüzdan hareketleri `transactions` tablosundan `WALLET` sekmesinde birleştirilir
+
 ---
 
 ## 9. LONG pozisyon yaşam döngüsü (örnek)
@@ -284,4 +293,4 @@ Migration: `MigrationRunner.java`.
 ./gradlew compileJava
 ```
 
-Ana sınıflar: `EconomyManager`, `ExchangeService`, `LeverageService`, `ExchangeCollateralService`, `ExchangeTaxService`, `DashboardDataService`, `DashboardActionService`.
+Ana sınıflar: `EconomyManager`, `ExchangeService`, `LeverageService`, `ExchangeCollateralService`, `ExchangeTaxService`, `EconomyEventService`, `FinanceDataService`, `DashboardDataService`, `DashboardActionService`.

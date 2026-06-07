@@ -4,6 +4,9 @@ import com.mceconomy.McEconomyMod;
 import com.mceconomy.command.BalanceCommand;
 import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
+import com.mceconomy.economy.EconomyEventCategory;
+import com.mceconomy.economy.EconomyEventDirection;
+import com.mceconomy.economy.EconomyEventService;
 import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
 import com.mceconomy.persistence.repo.TradeRepository;
@@ -26,6 +29,7 @@ public final class PlayerTradeService {
 	private final TradeRepository repository;
 	private final CurrencyService currencyService;
 	private final CentralBank centralBank;
+	private EconomyEventService economyEventService;
 
 	public PlayerTradeService(TradeRepository repository, CurrencyService currencyService, CentralBank centralBank) {
 		this.repository = repository;
@@ -33,28 +37,32 @@ public final class PlayerTradeService {
 		this.centralBank = centralBank;
 	}
 
+	public void bindEconomyEventService(EconomyEventService economyEventService) {
+		this.economyEventService = economyEventService;
+	}
+
 	public boolean invite(ServerPlayer initiator, String partnerName) {
 		UUID partnerUuid = BalanceCommand.findPlayerUuid(partnerName);
 		if (partnerUuid == null || partnerUuid.equals(initiator.getUUID())) {
-			initiator.sendSystemMessage(Component.literal("§cGecersiz oyuncu."));
+			initiator.sendSystemMessage(Component.literal("?cGecersiz oyuncu."));
 			return false;
 		}
 		try {
 			if (repository.findActiveForPlayer(initiator.getUUID()).isPresent()
 					|| repository.findActiveForPlayer(partnerUuid).isPresent()) {
-				initiator.sendSystemMessage(Component.literal("§cAktif takas var."));
+				initiator.sendSystemMessage(Component.literal("?cAktif takas var."));
 				return false;
 			}
 			PlayerTrade trade = PlayerTrade.open(initiator.getUUID(), initiator.getName().getString(),
 					partnerUuid, partnerName);
 			repository.saveTrade(trade);
 			initiator.sendSystemMessage(Component.literal(
-					"§aTakas daveti gonderildi: §f" + partnerName + " §7(#" + trade.id() + ")"));
+					"?aTakas daveti gonderildi: ?f" + partnerName + " ?7(#" + trade.id() + ")"));
 			ServerPlayer partner = server().getPlayerList().getPlayer(partnerUuid);
 			if (partner != null) {
 				partner.sendSystemMessage(Component.literal(
-						"§e[Takas] §f" + initiator.getName().getString()
-								+ " sizinle takas baslatmak istiyor. §7/takas kabul"));
+						"?e[Takas] ?f" + initiator.getName().getString()
+								+ " sizinle takas baslatmak istiyor. ?7/takas kabul"));
 			}
 			return true;
 		} catch (SQLException e) {
@@ -67,15 +75,15 @@ public final class PlayerTradeService {
 		try {
 			Optional<PlayerTrade> opt = repository.findActiveForPlayer(partner.getUUID());
 			if (opt.isEmpty() || !opt.get().partnerUuid().equals(partner.getUUID())) {
-				partner.sendSystemMessage(Component.literal("§cBekleyen takas daveti yok."));
+				partner.sendSystemMessage(Component.literal("?cBekleyen takas daveti yok."));
 				return false;
 			}
 			partner.sendSystemMessage(Component.literal(
-					"§aTakas #" + opt.get().id() + " aktif. §7/takas para|el|hazir|iptal"));
+					"?aTakas #" + opt.get().id() + " aktif. ?7/takas para|el|hazir|iptal"));
 			ServerPlayer initiator = server().getPlayerList().getPlayer(opt.get().initiatorUuid());
 			if (initiator != null) {
 				initiator.sendSystemMessage(Component.literal(
-						"§a" + partner.getName().getString() + " takasi kabul etti."));
+						"?a" + partner.getName().getString() + " takasi kabul etti."));
 			}
 			return true;
 		} catch (SQLException e) {
@@ -93,7 +101,7 @@ public final class PlayerTradeService {
 				return false;
 			}
 			if (!currencyService.withdraw(player.getUUID(), amountMg, TransactionType.TRANSFER)) {
-				player.sendSystemMessage(Component.literal("§cYetersiz bakiye."));
+				player.sendSystemMessage(Component.literal("?cYetersiz bakiye."));
 				return false;
 			}
 			if (trade.isInitiator(player.getUUID())) {
@@ -105,7 +113,7 @@ public final class PlayerTradeService {
 			}
 			repository.saveTrade(trade);
 			player.sendSystemMessage(Component.literal(
-					"§aTakasa " + GoldStandard.formatMilligrams(amountMg) + " eklendi."));
+					"?aTakasa " + GoldStandard.formatMilligrams(amountMg) + " eklendi."));
 			return true;
 		} catch (SQLException e) {
 			return false;
@@ -115,7 +123,7 @@ public final class PlayerTradeService {
 	public boolean addHandItem(ServerPlayer player) {
 		ItemStack hand = player.getMainHandItem();
 		if (hand.isEmpty() || hand.is(Items.AIR)) {
-			player.sendSystemMessage(Component.literal("§cElinde esya yok."));
+			player.sendSystemMessage(Component.literal("?cElinde esya yok."));
 			return false;
 		}
 		try {
@@ -142,7 +150,7 @@ public final class PlayerTradeService {
 				trade.setPartnerReady(false);
 			}
 			repository.saveTrade(trade);
-			player.sendSystemMessage(Component.literal("§aTakasa esya eklendi: §f" + count + "x " + itemId));
+			player.sendSystemMessage(Component.literal("?aTakasa esya eklendi: ?f" + count + "x " + itemId));
 			return true;
 		} catch (SQLException e) {
 			return false;
@@ -161,12 +169,12 @@ public final class PlayerTradeService {
 				trade.setPartnerReady(true);
 			}
 			repository.saveTrade(trade);
-			player.sendSystemMessage(Component.literal("§eHazir isaretlendi. Karsi taraf da hazir olunca takas tamamlanir."));
+			player.sendSystemMessage(Component.literal("?eHazir isaretlendi. Karsi taraf da hazir olunca takas tamamlanir."));
 			if (trade.initiatorReady() && trade.partnerReady()) {
 				return complete(trade, server());
 			}
-			notifyPartner(server(), trade, player.getUUID(),
-					player.getName().getString() + " hazir — siz de /takas hazir");
+			String readyMsg = player.getName().getString() + " hazir - siz de /takas hazir";
+			notifyPartner(server(), trade, player.getUUID(), readyMsg);
 			return true;
 		} catch (SQLException e) {
 			return false;
@@ -182,7 +190,7 @@ public final class PlayerTradeService {
 			refundEscrow(trade, server());
 			trade.setStatus(TradeStatus.CANCELLED);
 			repository.saveTrade(trade);
-			player.sendSystemMessage(Component.literal("§eTakas iptal edildi, esyalar iade edildi."));
+			player.sendSystemMessage(Component.literal("?eTakas iptal edildi, esyalar iade edildi."));
 			notifyPartner(server(), trade, player.getUUID(), "Takas iptal edildi.");
 			return true;
 		} catch (SQLException e) {
@@ -194,7 +202,7 @@ public final class PlayerTradeService {
 		try {
 			Optional<PlayerTrade> opt = repository.findTrade(tradeId);
 			if (opt.isEmpty() || opt.get().status() != TradeStatus.COMPLETED) {
-				reporter.sendSystemMessage(Component.literal("§cGecersiz takas."));
+				reporter.sendSystemMessage(Component.literal("?cGecersiz takas."));
 				return false;
 			}
 			PlayerTrade trade = opt.get();
@@ -203,7 +211,7 @@ public final class PlayerTradeService {
 			}
 			long windowMs = EconomyConfig.tradeDisputeWindowHours() * 3600_000L;
 			if (System.currentTimeMillis() - trade.completedAt() > windowMs) {
-				reporter.sendSystemMessage(Component.literal("§cSikayet suresi doldu."));
+				reporter.sendSystemMessage(Component.literal("?cSikayet suresi doldu."));
 				return false;
 			}
 			UUID target = trade.isInitiator(reporter.getUUID()) ? trade.partnerUuid() : trade.initiatorUuid();
@@ -213,9 +221,10 @@ public final class PlayerTradeService {
 			repository.saveDispute(dispute);
 			trade.setStatus(TradeStatus.DISPUTED);
 			repository.saveTrade(trade);
-			reporter.sendSystemMessage(Component.literal("§aTakas sikayeti #" + dispute.id() + " acildi. OP inceleyecek."));
-			notifyOps(server(), "Takas sikayeti #" + dispute.id() + ": " + reporter.getName().getString()
-					+ " → " + targetName);
+			reporter.sendSystemMessage(Component.literal("?aTakas sikayeti #" + dispute.id() + " acildi. OP inceleyecek."));
+			String disputeMsg = "Takas sikayeti #" + dispute.id() + ": " + reporter.getName().getString()
+					+ " -> " + targetName;
+			notifyOps(server(), disputeMsg);
 			return true;
 		} catch (SQLException e) {
 			return false;
@@ -294,20 +303,23 @@ public final class PlayerTradeService {
 		ServerPlayer partner = server.getPlayerList().getPlayer(trade.partnerUuid());
 		if (initiator == null || partner == null) {
 			if (initiator != null) {
-				initiator.sendSystemMessage(Component.literal("§cTakas icin iki taraf da cevrimici olmali."));
+				initiator.sendSystemMessage(Component.literal("?cTakas icin iki taraf da cevrimici olmali."));
 			}
 			if (partner != null) {
-				partner.sendSystemMessage(Component.literal("§cTakas icin iki taraf da cevrimici olmali."));
+				partner.sendSystemMessage(Component.literal("?cTakas icin iki taraf da cevrimici olmali."));
 			}
 			trade.setInitiatorReady(false);
 			trade.setPartnerReady(false);
 			repository.saveTrade(trade);
 			return false;
 		}
-		currencyService.deposit(partner.getUUID(), trade.initiatorGoldMg(), TransactionType.TRANSFER);
-		currencyService.deposit(initiator.getUUID(), trade.partnerGoldMg(), TransactionType.TRANSFER);
+		long initiatorGold = trade.initiatorGoldMg();
+		long partnerGold = trade.partnerGoldMg();
+		currencyService.deposit(partner.getUUID(), initiatorGold, TransactionType.TRANSFER);
+		currencyService.deposit(initiator.getUUID(), partnerGold, TransactionType.TRANSFER);
 		TradeItemCodec.giveEncoded(partner, trade.initiatorItemsJson());
 		TradeItemCodec.giveEncoded(initiator, trade.partnerItemsJson());
+		logTradeComplete(trade, initiatorGold, partnerGold);
 		trade.setInitiatorGoldMg(0);
 		trade.setPartnerGoldMg(0);
 		trade.setInitiatorItemsJson("[]");
@@ -315,9 +327,29 @@ public final class PlayerTradeService {
 		trade.setStatus(TradeStatus.COMPLETED);
 		trade.setCompletedAt(System.currentTimeMillis());
 		repository.saveTrade(trade);
-		initiator.sendSystemMessage(Component.literal("§a§lTakas tamamlandi! §7Dolandirildiginizi dusunurseniz /takas sikayet <id>"));
-		partner.sendSystemMessage(Component.literal("§a§lTakas tamamlandi! §7Dolandirildiginizi dusunurseniz /takas sikayet <id>"));
+		initiator.sendSystemMessage(Component.literal("?a?lTakas tamamlandi! ?7Dolandirildiginizi dusunurseniz /takas sikayet <id>"));
+		partner.sendSystemMessage(Component.literal("?a?lTakas tamamlandi! ?7Dolandirildiginizi dusunurseniz /takas sikayet <id>"));
 		return true;
+	}
+
+	private void logTradeComplete(PlayerTrade trade, long initiatorGold, long partnerGold) {
+		if (economyEventService == null) {
+			return;
+		}
+		if (partnerGold > 0) {
+			economyEventService.recordPersonal(trade.initiatorUuid(), EconomyEventCategory.TRADE,
+					EconomyEventDirection.IN, partnerGold, trade.partnerUuid(),
+					null, 0, "TRADE_COMPLETE",
+					trade.partnerName() + " ile takas - alinan: "
+							+ GoldStandard.formatMilligrams(partnerGold));
+		}
+		if (initiatorGold > 0) {
+			economyEventService.recordPersonal(trade.partnerUuid(), EconomyEventCategory.TRADE,
+					EconomyEventDirection.IN, initiatorGold, trade.initiatorUuid(),
+					null, 0, "TRADE_COMPLETE",
+					trade.initiatorName() + " ile takas - alinan: "
+							+ GoldStandard.formatMilligrams(initiatorGold));
+		}
 	}
 
 	private void refundEscrow(PlayerTrade trade, MinecraftServer server) {
@@ -344,7 +376,7 @@ public final class PlayerTradeService {
 	private PlayerTrade requireActive(ServerPlayer player) throws SQLException {
 		Optional<PlayerTrade> opt = repository.findActiveForPlayer(player.getUUID());
 		if (opt.isEmpty() || opt.get().status() != TradeStatus.PENDING) {
-			player.sendSystemMessage(Component.literal("§cAktif takas yok."));
+			player.sendSystemMessage(Component.literal("?cAktif takas yok."));
 			return null;
 		}
 		return opt.get();
@@ -364,7 +396,7 @@ public final class PlayerTradeService {
 		UUID other = trade.isInitiator(from) ? trade.partnerUuid() : trade.initiatorUuid();
 		ServerPlayer p = server.getPlayerList().getPlayer(other);
 		if (p != null) {
-			p.sendSystemMessage(Component.literal("§e[Takas] §f" + message));
+			p.sendSystemMessage(Component.literal("?e[Takas] ?f" + message));
 		}
 	}
 
@@ -375,7 +407,7 @@ public final class PlayerTradeService {
 	private void notifyOps(MinecraftServer server, String message) {
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			if (server.getPlayerList().isOp(player.nameAndId())) {
-				player.sendSystemMessage(Component.literal("§c[OP Takas] §f" + message));
+				player.sendSystemMessage(Component.literal("?c[OP Takas] ?f" + message));
 			}
 		}
 	}

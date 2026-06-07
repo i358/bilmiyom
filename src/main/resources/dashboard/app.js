@@ -1636,6 +1636,214 @@ async function loadGuildPanel() {
   document.getElementById('guildBargainBtn')?.addEventListener('click', () =>
     doAction('/actions/guild/bargain', { message: document.getElementById('guildBargainMsg').value }, loadGuildPanel));
 }
+let ledgerScope = 'personal';
+let ledgerCategory = '';
+let ledgerCompany = '';
+
+const LEDGER_PERSONAL_CATS = [
+  { id: '', label: 'Tümü' },
+  { id: 'COIN_CREATOR', label: 'Coin aktivitesi' },
+  { id: 'SHARE_OWNER', label: 'Şirketimden hisse' },
+  { id: 'EXCHANGE', label: 'Borsa' },
+  { id: 'SHARES', label: 'Hisse' },
+  { id: 'WALLET', label: 'Cüzdan' },
+  { id: 'MARKET', label: 'Market' },
+  { id: 'LEVERAGE', label: 'Kaldıraç' },
+  { id: 'COLLATERAL', label: 'Teminat' },
+  { id: 'EMPLOYMENT', label: 'Maaş' },
+  { id: 'TAX_FEE', label: 'Vergi' },
+  { id: 'TRADE', label: 'Takas' },
+  { id: 'BLACK_MARKET', label: 'Kara borsa' },
+  { id: 'MASAK', label: 'MASAK' },
+  { id: 'OTHER', label: 'Diğer' }
+];
+
+const LEDGER_COMPANY_CATS = [
+  { id: '', label: 'Tümü' },
+  { id: 'TREASURY_IN', label: 'Kasa girişi' },
+  { id: 'TREASURY_OUT', label: 'Kasa çıkışı' },
+  { id: 'DIVIDEND', label: 'Temettü' },
+  { id: 'TAX_FEE', label: 'Vergi' },
+  { id: 'OTHER', label: 'Diğer' }
+];
+
+const LEDGER_MUNICIPAL_CATS = [
+  { id: '', label: 'Tümü' },
+  { id: 'TAX_IN', label: 'Vergi geliri' },
+  { id: 'SPEND_OUT', label: 'Harcama' },
+  { id: 'SUBSIDY', label: 'Piyasa desteği' },
+  { id: 'OTHER', label: 'Diğer' }
+];
+
+function ledgerCatsForScope() {
+  if (ledgerScope === 'company') return LEDGER_COMPANY_CATS;
+  if (ledgerScope === 'municipal') return LEDGER_MUNICIPAL_CATS;
+  return LEDGER_PERSONAL_CATS;
+}
+
+function renderLedgerChips() {
+  const box = document.getElementById('ledgerCategoryChips');
+  if (!box) return;
+  box.innerHTML = ledgerCatsForScope().map(c =>
+    `<button type="button" class="btn btn-ghost btn-sm ledger-cat${ledgerCategory === c.id ? ' active' : ''}" data-cat="${c.id}">${c.label}</button>`
+  ).join('');
+  box.querySelectorAll('.ledger-cat').forEach(btn => {
+    btn.addEventListener('click', () => {
+      ledgerCategory = btn.dataset.cat || '';
+      renderLedgerChips();
+      loadLedgerEvents();
+    });
+  });
+}
+
+function renderLedgerSummary(charts) {
+  const el = document.getElementById('ledgerSummary');
+  if (!el || !charts) return;
+  el.innerHTML = `
+    <div class="stat-card gold"><div class="label">Toplam gelir</div><div class="value">${charts.totalIn || '—'}</div></div>
+    <div class="stat-card"><div class="label">Toplam gider</div><div class="value">${charts.totalOut || '—'}</div></div>
+    <div class="stat-card accent"><div class="label">Net</div><div class="value">${charts.net || '—'}</div></div>`;
+}
+
+function renderLedgerFlowChart(charts) {
+  destroyChart('ledgerFlow');
+  const el = document.getElementById('ledgerFlowChart');
+  if (!el || !charts?.daily?.length) return;
+  const labels = charts.daily.map(d => new Date(d.dayMs).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' }));
+  charts.ledgerFlow = new Chart(el, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Gelir', data: charts.daily.map(d => (d.inMg || 0) / 1000), backgroundColor: '#7bed9f88' },
+        { label: 'Gider', data: charts.daily.map(d => (d.outMg || 0) / 1000), backgroundColor: '#ff6b6b88' }
+      ]
+    },
+    options: chartOptions()
+  });
+}
+
+function renderLedgerCategoryChart(charts) {
+  destroyChart('ledgerCategory');
+  const el = document.getElementById('ledgerCategoryChart');
+  if (!el || !charts?.byCategory?.length) return;
+  const inRows = charts.byCategory.filter(c => c.direction === 'IN');
+  charts.ledgerCategory = new Chart(el, {
+    type: 'doughnut',
+    data: {
+      labels: inRows.map(c => c.category),
+      datasets: [{ data: inRows.map(c => (c.totalMg || 0) / 1000), backgroundColor: ['#d4a843', '#4da6ff', '#7bed9f', '#aa88ff', '#ff6b6b', '#e6b422', '#555', '#8b9cb3'] }]
+    },
+    options: { plugins: { legend: { labels: { color: '#8b9cb3' } } } }
+  });
+}
+
+function renderLedgerEvents(events, meta) {
+  const body = document.getElementById('ledgerEventBody');
+  const metaEl = document.getElementById('ledgerMeta');
+  if (!body) return;
+  const rows = events || [];
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="7" class="hint">Kayıt yok — işlemler burada görünecek.</td></tr>';
+  } else {
+    body.innerHTML = rows.map(e => {
+      const dir = e.direction === 'IN'
+        ? '<span class="badge badge-ok">Gelir</span>'
+        : '<span class="badge badge-warn">Gider</span>';
+      const ts = new Date(e.timestamp).toLocaleString('tr-TR');
+      return `<tr>
+        <td>${ts}</td>
+        <td>${e.description || '—'}${e.legacy ? ' <span class="hint">(eski)</span>' : ''}</td>
+        <td>${e.counterpartyName || '—'}</td>
+        <td>${e.assetSymbol || '—'}</td>
+        <td>${e.quantity > 0 ? e.quantity : '—'}</td>
+        <td>${e.amount || formatMg(e.amountMg)}</td>
+        <td>${dir}</td>
+      </tr>`;
+    }).join('');
+  }
+  if (metaEl) {
+    const cat = meta?.category && meta.category !== 'ALL' ? meta.category : 'tüm kategoriler';
+    metaEl.textContent = `Son ${rows.length} kayıt (${cat})`;
+  }
+}
+
+async function loadLedgerCharts() {
+  let path = '/finance/personal/charts?days=30';
+  if (ledgerScope === 'company' && ledgerCompany) {
+    path = `/finance/company/charts?company=${encodeURIComponent(ledgerCompany)}&days=30`;
+  } else if (ledgerScope === 'municipal') {
+    path = '/finance/municipal/charts?days=30';
+  }
+  const charts = await api(path);
+  renderLedgerSummary(charts);
+  renderLedgerFlowChart(charts);
+  renderLedgerCategoryChart(charts);
+  if (ledgerScope === 'municipal' && charts.budgetHistory?.length) {
+    destroyChart('ledgerBudget');
+    const el = document.getElementById('ledgerFlowChart');
+    if (el && charts.budgetHistory.length > 1) {
+      const sorted = charts.budgetHistory.slice().sort((a, b) => a.recordedAt - b.recordedAt);
+      charts.ledgerFlow = new Chart(el, {
+        type: 'line',
+        data: {
+          labels: sorted.map(p => new Date(p.recordedAt).toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })),
+          datasets: [{ label: 'Belediye bütçesi', data: sorted.map(p => (p.priceMg || 0) / 1000), borderColor: '#7bed9f', tension: 0.3, fill: true, backgroundColor: '#7bed9f22' }]
+        },
+        options: chartOptions()
+      });
+    }
+  }
+}
+
+async function loadLedgerEvents() {
+  let path = `/finance/personal/events?limit=100${ledgerCategory ? '&category=' + ledgerCategory : ''}`;
+  if (ledgerScope === 'company') {
+    if (!ledgerCompany) {
+      renderLedgerEvents([], { category: 'ALL' });
+      return;
+    }
+    path = `/finance/company/events?company=${encodeURIComponent(ledgerCompany)}&limit=100${ledgerCategory ? '&category=' + ledgerCategory : ''}`;
+  } else if (ledgerScope === 'municipal') {
+    path = `/finance/municipal/events?limit=100${ledgerCategory ? '&category=' + ledgerCategory : ''}`;
+  }
+  const data = await api(path);
+  renderLedgerEvents(data.events, data);
+}
+
+async function loadLedgerPanel() {
+  const companyRow = document.getElementById('ledgerCompanyRow');
+  if (ledgerScope === 'company') {
+    companyRow?.classList.remove('hidden');
+    const list = await api('/finance/company/list');
+    const companies = list.companies || [];
+    fillSelect('ledgerCompanySelect', companies, 'name', c => c.ticker ? `${c.name} (${c.ticker})` : c.name, 'Şirket seçin');
+    if (!ledgerCompany && companies.length) ledgerCompany = companies[0].name;
+    const sel = document.getElementById('ledgerCompanySelect');
+    if (sel) {
+      sel.value = ledgerCompany;
+      sel.onchange = () => { ledgerCompany = sel.value; loadLedgerCharts(); loadLedgerEvents(); };
+    }
+  } else {
+    companyRow?.classList.add('hidden');
+  }
+  renderLedgerChips();
+  await Promise.all([loadLedgerCharts(), loadLedgerEvents()]);
+}
+
+function setupLedgerNav() {
+  document.querySelectorAll('.ledger-scope').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.ledger-scope').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      ledgerScope = btn.dataset.scope || 'personal';
+      ledgerCategory = '';
+      loadLedgerPanel();
+    });
+  });
+}
+setupLedgerNav();
+
 async function loadMunicipalPanel() {
   const d = await api('/municipal');
   const el = document.getElementById('municipalPanel');
@@ -1772,6 +1980,7 @@ document.querySelectorAll('#sidebarNav .nav-item[data-page]').forEach(btn => {
     else if (page === 'trade') loadTradePanel();
     else if (page === 'guild') loadGuildPanel();
     else if (page === 'municipal') loadMunicipalPanel();
+    else if (page === 'ledger') loadLedgerPanel();
     else if (page === 'property') loadPropertyPanel();
     else if (page === 'vehicle') loadVehiclePanel();
     else if (page === 'government') loadGovernmentPanel();

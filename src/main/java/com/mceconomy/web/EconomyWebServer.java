@@ -64,6 +64,7 @@ public final class EconomyWebServer {
 			server.createContext("/api/insurance", this::handleInsurance);
 			server.createContext("/api/guild", this::handleGuild);
 			server.createContext("/api/municipal", this::handleMunicipal);
+			server.createContext("/api/finance/", this::handleFinance);
 			server.createContext("/api/government", this::handleGovernment);
 			server.createContext("/api/admin/trades/disputes", this::handleAdminTradeDisputes);
 			server.createContext("/api/actions/", this::handlePlayerAction);
@@ -326,6 +327,64 @@ public final class EconomyWebServer {
 			return;
 		}
 		sendJson(exchange, 200, DashboardDataService.buildMunicipal(session.get().playerUuid()));
+	}
+
+	private void handleFinance(HttpExchange exchange) throws IOException {
+		if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+			sendJson(exchange, 405, error("method", "GET gerekli"));
+			return;
+		}
+		Optional<WebSession> session = requireSession(exchange);
+		if (session.isEmpty()) {
+			sendJson(exchange, 401, error("auth", "Oturum gerekli"));
+			return;
+		}
+		String path = exchange.getRequestURI().getPath();
+		String sub = path.substring("/api/finance/".length());
+		String query = exchange.getRequestURI().getQuery();
+		UUID uuid = session.get().playerUuid();
+		int limit = intQueryParam(query, "limit", 100);
+		int days = intQueryParam(query, "days", 30);
+		String category = queryParam(query, "category");
+		switch (sub) {
+			case "personal/categories" -> sendJson(exchange, 200, FinanceDataService.buildPersonalCategories(uuid));
+			case "personal/events" -> sendJson(exchange, 200,
+					FinanceDataService.buildPersonalEvents(uuid, category, limit));
+			case "personal/charts" -> sendJson(exchange, 200, FinanceDataService.buildPersonalCharts(uuid, days));
+			case "company/list" -> sendJson(exchange, 200, FinanceDataService.buildCompanyList(uuid));
+			case "company/events" -> {
+				String company = queryParam(query, "company");
+				if (company == null || company.isBlank()) {
+					sendJson(exchange, 400, error("invalid", "company parametresi gerekli"));
+					return;
+				}
+				sendJson(exchange, 200, FinanceDataService.buildCompanyEvents(uuid, company, category, limit));
+			}
+			case "company/charts" -> {
+				String company = queryParam(query, "company");
+				if (company == null || company.isBlank()) {
+					sendJson(exchange, 400, error("invalid", "company parametresi gerekli"));
+					return;
+				}
+				sendJson(exchange, 200, FinanceDataService.buildCompanyCharts(uuid, company, days));
+			}
+			case "municipal/events" -> sendJson(exchange, 200,
+					FinanceDataService.buildMunicipalEvents(category, limit));
+			case "municipal/charts" -> sendJson(exchange, 200, FinanceDataService.buildMunicipalCharts(days));
+			default -> sendJson(exchange, 404, error("not_found", "Bilinmeyen finans endpoint"));
+		}
+	}
+
+	private static int intQueryParam(String query, String key, int defaultValue) {
+		String raw = queryParam(query, key);
+		if (raw == null || raw.isBlank()) {
+			return defaultValue;
+		}
+		try {
+			return Integer.parseInt(raw);
+		} catch (NumberFormatException e) {
+			return defaultValue;
+		}
 	}
 
 	private void handleAdminTradeDisputes(HttpExchange exchange) throws IOException {

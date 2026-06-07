@@ -448,8 +448,20 @@
           </div>
 
           <div class="panel-card">
+            <h3>🏦 Borsa Teminat Hesabı</h3>
+            <p class="hint">Kaldıraç işlemleri cüzdandan değil, bu hesaptan teminat kullanır. Önce yatırın.</p>
+            <div id="collateralBalances" class="hint" style="margin-bottom:12px">Yükleniyor…</div>
+            <label>Yatır / Çek ($)</label>
+            <input id="collateralAmount" type="number" min="1" value="10">
+            <div class="form-row" style="margin-top:10px">
+              <button class="btn btn-gold" id="collateralDepositBtn">Cüzdandan Yatır</button>
+              <button class="btn btn-ghost" id="collateralWithdrawBtn">Cüzdana Çek</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
             <h3>⚡ Kaldıraçlı İşlem (CFD)</h3>
-            <p class="hint warn-text">Yüksek risk! Zarar teminatınızı aşarsa pozisyon otomatik likide edilir (maks 10x).</p>
+            <p class="hint warn-text">Yüksek risk! Bakım marjının altına düşerseniz margin call ve likidasyon olur (maks 10x). Kârda stopaj kesilir; açık pozisyonlarda funding ücreti uygulanır.</p>
             <div class="leverage-form">
               <div><label>Coin</label><select id="levSymbol"></select></div>
               <div><label>Yön</label>
@@ -461,6 +473,20 @@
               <div><label>Teminat (MC)</label><input id="levMargin" type="number" min="1" value="10"></div>
             </div>
             <button class="btn btn-gold btn-block" id="levOpenBtn" style="margin-top:12px">Pozisyon Aç</button>
+          </div>
+
+          <div class="panel-card">
+            <h3>Limit Emir</h3>
+            <div class="form-row">
+              <div><label>Coin</label><select id="limitSymbol"></select></div>
+              <div><label>Yön</label>
+                <select id="limitSide"><option value="buy">Al (limit)</option><option value="sell">Sat (limit)</option></select>
+              </div>
+            </div>
+            <label>Adet</label><input id="limitQty" type="number" min="1" value="1">
+            <label>Limit fiyat ($)</label><input id="limitPrice" type="number" min="1" value="10">
+            <button class="btn btn-gold btn-block" id="limitPlaceBtn" style="margin-top:10px">Emir Ver</button>
+            <div id="limitOrdersList" class="hint" style="margin-top:12px">Açık limit emir yok.</div>
           </div>
 
           <div class="panel-card">

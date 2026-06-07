@@ -43,10 +43,15 @@ const DOCS_HTML = `
 <div class="doc-section">
   <h3>📉 Borsa & Coin (Borsaya Giriş)</h3>
   <ul>
-    <li><strong>Coin Al/Sat:</strong> Borsada listelenen coinleri alıp satın. "Tüm Coinlerimi Sat" ile elinizdeki tüm coinleri tek tıkla satın.</li>
-    <li><strong>Coin Oluştur:</strong> Kendi coininizi sembol, isim, arz ve başlangıç fiyatıyla çıkarın.</li>
+    <li><strong>Borsa teminat hesabı:</strong> Kaldıraç işlemleri cüzdandan değil, ayrı teminat hesabından çalışır. Önce <em>Borsa &amp; Coin → Borsa Teminat Hesabı</em> bölümünden cüzdanınıza yatırın; çekerken kilitli marj kadar bakiye bloke kalır.</li>
+    <li><strong>Coin Al/Sat:</strong> Spot işlemlerde komisyon kesilir (belediye bütçesine gider). "Tüm Coinlerimi Sat" ile elinizdeki tüm coinleri tek tıkla satın.</li>
+    <li><strong>Coin Oluştur:</strong> Kendi coininizi sembol, isim, arz ve başlangıç fiyatıyla çıkarın. <span class="warn-text">Kendi coininizde kaldıraç açamazsınız.</span></li>
     <li><strong>Şirketi Listele/Çıkar:</strong> Şirketinizi bir ticker ile borsaya açın veya borsadan çıkarın.</li>
-    <li><strong>⚡ Kaldıraçlı İşlem (CFD):</strong> 2x-10x kaldıraçla LONG (yükselişe) veya SHORT (düşüşe) pozisyon açın. <span class="warn-text">Zarar teminatınızı aşarsa pozisyon otomatik likide edilir.</span> Yüksek risk!</li>
+    <li><strong>⚡ Kaldıraçlı İşlem (CFD):</strong> 2x-10x kaldıraçla LONG veya SHORT. Likidasyon fiyatı panelde gösterilir. Margin call sonrası teminat ekleyebilir veya kısmi kapatabilirsiniz. Funding oranı LONG/SHORT dengesine göre değişir.</li>
+    <li><strong>Limit emir:</strong> Hedef fiyata gelince otomatik alım/satım. Açık emirleri iptal edebilirsiniz.</li>
+    <li><strong>Spot kilidi:</strong> Açık LONG varken aynı coin alınamaz; açık SHORT varken satılamaz. Treasury boşsa satış yapılamaz.</li>
+    <li><strong>Hisse:</strong> Alım/satımda komisyon kesilir. Şirketler temettü dağıtabilir; kasa tükenirse iflas edip borsadan çıkar.</li>
+    <li class="hint">Teknik para akışları ve config: sunucu OP'leri için repo kökündeki <strong>README.md</strong> dosyasına bakın.</li>
   </ul>
 </div>
 

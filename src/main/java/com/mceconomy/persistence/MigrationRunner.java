@@ -133,6 +133,75 @@ public final class MigrationRunner {
 			migrateV27();
 			setVersion(27);
 		}
+		if (current < 28) {
+			migrateV28();
+			setVersion(28);
+		}
+		if (current < 29) {
+			migrateV29();
+			setVersion(29);
+		}
+		if (current < 30) {
+			migrateV30();
+			setVersion(30);
+		}
+	}
+
+	private void migrateV30() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V30: gap analizi — maliyet bazı, limit emir, sirket geliri...");
+		try (Statement stmt = connection.createStatement()) {
+			try {
+				stmt.execute("ALTER TABLE token_holdings ADD COLUMN cost_basis_mg INTEGER NOT NULL DEFAULT 0");
+			} catch (SQLException ignored) {
+			}
+			try {
+				stmt.execute("ALTER TABLE companies ADD COLUMN lifetime_revenue_mg INTEGER NOT NULL DEFAULT 0");
+			} catch (SQLException ignored) {
+			}
+			try {
+				stmt.execute("ALTER TABLE companies ADD COLUMN last_dividend_at INTEGER NOT NULL DEFAULT 0");
+			} catch (SQLException ignored) {
+			}
+			try {
+				stmt.execute("ALTER TABLE companies ADD COLUMN insolvent INTEGER NOT NULL DEFAULT 0");
+			} catch (SQLException ignored) {
+			}
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS exchange_limit_orders (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						owner_uuid TEXT NOT NULL,
+						symbol TEXT NOT NULL,
+						is_buy INTEGER NOT NULL,
+						amount INTEGER NOT NULL,
+						limit_price_mg INTEGER NOT NULL,
+						created_at INTEGER NOT NULL,
+						open INTEGER NOT NULL DEFAULT 1
+					)
+					""");
+		}
+	}
+
+	private void migrateV29() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V29: borsa teminat hesabi...");
+		try (Statement stmt = connection.createStatement()) {
+			stmt.execute("""
+					CREATE TABLE IF NOT EXISTS exchange_collateral (
+						player_uuid TEXT PRIMARY KEY,
+						balance_mg INTEGER NOT NULL DEFAULT 0
+					)
+					""");
+		}
+	}
+
+	private void migrateV28() throws SQLException {
+		McEconomyMod.LOGGER.info("Migration V28: kaldirac odeme havuzu...");
+		try (Statement stmt = connection.createStatement()) {
+			try {
+				stmt.execute("ALTER TABLE central_bank ADD COLUMN leverage_pool_mg INTEGER NOT NULL DEFAULT 0");
+			} catch (SQLException ignored) {
+				// column may exist
+			}
+		}
 	}
 
 	private void migrateV27() throws SQLException {

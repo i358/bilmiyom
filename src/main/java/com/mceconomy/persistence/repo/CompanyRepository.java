@@ -114,13 +114,17 @@ public final class CompanyRepository {
 
 	private void update(Company company) throws SQLException {
 		try (PreparedStatement ps = connection.prepareStatement("""
-				UPDATE companies SET treasury=?, outstanding_shares=?, listed_on_exchange=?, ticker=? WHERE id=?
+				UPDATE companies SET treasury=?, outstanding_shares=?, listed_on_exchange=?, ticker=?,
+					lifetime_revenue_mg=?, last_dividend_at=?, insolvent=? WHERE id=?
 				""")) {
 			ps.setLong(1, company.treasury());
 			ps.setInt(2, company.outstandingShares());
 			ps.setInt(3, company.listedOnExchange() ? 1 : 0);
 			ps.setString(4, company.ticker());
-			ps.setInt(5, company.id());
+			ps.setLong(5, company.lifetimeRevenueMg());
+			ps.setLong(6, company.lastDividendAt());
+			ps.setInt(7, company.insolvent() ? 1 : 0);
+			ps.setInt(8, company.id());
 			ps.executeUpdate();
 		}
 	}
@@ -134,8 +138,19 @@ public final class CompanyRepository {
 				rs.getInt("outstanding_shares"),
 				rs.getLong("created_at"),
 				getIntColumn(rs, "listed_on_exchange", 0) == 1,
-				getStringColumn(rs, "ticker", null)
+				getStringColumn(rs, "ticker", null),
+				getLongColumn(rs, "lifetime_revenue_mg", 0),
+				getLongColumn(rs, "last_dividend_at", 0),
+				getIntColumn(rs, "insolvent", 0) == 1
 		);
+	}
+
+	private static long getLongColumn(ResultSet rs, String column, long defaultValue) {
+		try {
+			return rs.getLong(column);
+		} catch (SQLException e) {
+			return defaultValue;
+		}
 	}
 
 	private static int getIntColumn(ResultSet rs, String column, int defaultValue) {

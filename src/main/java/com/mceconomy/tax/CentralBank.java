@@ -1,5 +1,6 @@
 package com.mceconomy.tax;
 
+import com.mceconomy.McEconomyMod;
 import com.mceconomy.persistence.DatabaseManager;
 
 import java.sql.PreparedStatement;
@@ -7,6 +8,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 
 public final class CentralBank {
+	/** long tasmasini ve dashboard grafik bozulmasini onlemek icin ust sinir. */
+	public static final long MAX_MUNICIPAL_BUDGET_MG = 10_000_000_000_000_000L;
+
 	private final DatabaseManager database;
 	private double baseRate;
 	private long moneySupply;
@@ -41,6 +45,9 @@ public final class CentralBank {
 					municipalBudgetMg = 0;
 				}
 				loadFiatColumns(rs);
+				if (normalizeMunicipalBudget()) {
+					save();
+				}
 			} else {
 				save();
 			}
@@ -146,25 +153,51 @@ public final class CentralBank {
 	}
 
 	public long getMunicipalBudgetMg() {
-		return municipalBudgetMg;
+		return Math.max(0, municipalBudgetMg);
 	}
 
 	public void addMunicipalBudget(long amount) {
-		if (amount > 0) {
-			municipalBudgetMg += amount;
+		if (amount <= 0) {
+			return;
+		}
+		long current = getMunicipalBudgetMg();
+		if (current >= MAX_MUNICIPAL_BUDGET_MG) {
+			return;
+		}
+		long next = current + amount;
+		if (next < current || next > MAX_MUNICIPAL_BUDGET_MG) {
+			municipalBudgetMg = MAX_MUNICIPAL_BUDGET_MG;
+		} else {
+			municipalBudgetMg = next;
 		}
 	}
 
 	public void setMunicipalBudgetMg(long municipalBudgetMg) {
-		this.municipalBudgetMg = Math.max(0, municipalBudgetMg);
+		this.municipalBudgetMg = Math.min(MAX_MUNICIPAL_BUDGET_MG, Math.max(0, municipalBudgetMg));
 	}
 
 	public boolean spendMunicipalBudget(long amount) {
-		if (amount <= 0 || municipalBudgetMg < amount) {
+		long current = getMunicipalBudgetMg();
+		if (amount <= 0 || current < amount) {
 			return false;
 		}
-		municipalBudgetMg -= amount;
+		municipalBudgetMg = current - amount;
 		return true;
+	}
+
+	private boolean normalizeMunicipalBudget() {
+		long before = municipalBudgetMg;
+		if (municipalBudgetMg < 0) {
+			McEconomyMod.LOGGER.warn("Belediye butcesi negatifti (muhtemel long tasmasi), sifirlandi: {}", before);
+			municipalBudgetMg = 0;
+			return true;
+		}
+		if (municipalBudgetMg > MAX_MUNICIPAL_BUDGET_MG) {
+			McEconomyMod.LOGGER.warn("Belediye butcesi ust sinira cekildi: {} -> {}", before, MAX_MUNICIPAL_BUDGET_MG);
+			municipalBudgetMg = MAX_MUNICIPAL_BUDGET_MG;
+			return true;
+		}
+		return false;
 	}
 
 	public void adjustBaseRate(double targetInflation, double currentInflation) {

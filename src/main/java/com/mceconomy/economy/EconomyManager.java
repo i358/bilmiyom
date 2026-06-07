@@ -39,9 +39,12 @@ import com.mceconomy.persistence.repo.LoanRepository;
 import com.mceconomy.persistence.repo.MarketRepository;
 import com.mceconomy.persistence.repo.MasakRepository;
 import com.mceconomy.appeal.AppealService;
+import com.mceconomy.exchange.ExchangeCollateralService;
 import com.mceconomy.exchange.ExchangeService;
+import com.mceconomy.exchange.ExchangeTaxService;
 import com.mceconomy.exchange.ForeignInvestorMarketService;
 import com.mceconomy.exchange.LeverageService;
+import com.mceconomy.persistence.repo.ExchangeCollateralRepository;
 import com.mceconomy.persistence.repo.LeverageRepository;
 import com.mceconomy.casino.CasinoService;
 import com.mceconomy.privatebank.PrivateBankService;
@@ -74,6 +77,7 @@ import com.mceconomy.justice.PrisonService;
 import com.mceconomy.justice.ReportService;
 import com.mceconomy.insurance.InsuranceService;
 import com.mceconomy.municipal.MayorService;
+import com.mceconomy.municipal.MunicipalEconomyService;
 import com.mceconomy.persistence.repo.InsuranceRepository;
 import com.mceconomy.persistence.repo.MunicipalRepository;
 import com.mceconomy.persistence.repo.PrisonRepository;
@@ -130,6 +134,8 @@ public final class EconomyManager {
 	private GoldReserveService goldReserveService;
 	private LaunderingService launderingService;
 	private ExchangeService exchangeService;
+	private ExchangeCollateralService exchangeCollateralService;
+	private ExchangeTaxService exchangeTaxService;
 	private LeverageService leverageService;
 	private PrivateBankService privateBankService;
 	private AppealService appealService;
@@ -157,6 +163,7 @@ public final class EconomyManager {
 	private BankSecurityCameraService securityCameraService;
 	private InsuranceService insuranceService;
 	private MayorService mayorService;
+	private MunicipalEconomyService municipalEconomyService;
 	private ForeignInvestorMarketService foreignInvestorMarket;
 	private PriceHistoryService priceHistoryService;
 	private EconomyWebServer economyWebServer;
@@ -270,11 +277,18 @@ public final class EconomyManager {
 			guildService = new GuildService(guildRepository, currencyService);
 
 			ExchangeRepository exchangeRepository = new ExchangeRepository(database.connection());
-			exchangeService = new ExchangeService(exchangeRepository, currencyService, companyManager, masakService);
+			exchangeTaxService = new ExchangeTaxService(taxService);
+			exchangeService = new ExchangeService(exchangeRepository, currencyService, companyManager, masakService,
+					exchangeTaxService);
 			exchangeService.load();
+			companyManager.bindExchangeTaxService(exchangeTaxService);
+
+			ExchangeCollateralRepository collateralRepository = new ExchangeCollateralRepository(database.connection());
+			exchangeCollateralService = new ExchangeCollateralService(collateralRepository, currencyService);
 
 			LeverageRepository leverageRepository = new LeverageRepository(database.connection());
-			leverageService = new LeverageService(leverageRepository, currencyService, exchangeService);
+			leverageService = new LeverageService(leverageRepository, exchangeService,
+					exchangeCollateralService, exchangeTaxService);
 			leverageService.bindServer(server);
 			leverageService.load();
 
@@ -315,6 +329,7 @@ public final class EconomyManager {
 			mayorService = new MayorService(municipalRepository, centralBank);
 			mayorService.load();
 			mayorService.ensureElectionScheduled();
+			municipalEconomyService = new MunicipalEconomyService(centralBank);
 			goldReserveService.bindDepotLedger(depotLedgerService);
 			bankSecurityService = new BankSecurityService(server, facilityDepotService);
 			SecurityCameraRepository cameraRepository = new SecurityCameraRepository(database.connection());
@@ -426,6 +441,9 @@ public final class EconomyManager {
 				companyStashService.saveAll();
 			}
 			exchangeService.saveAll();
+			if (leverageService != null) {
+				leverageService.savePool();
+			}
 			privateBankService.saveAll();
 			centralBank.save();
 		} catch (SQLException e) {
@@ -457,6 +475,22 @@ public final class EconomyManager {
 	public void onMarketTick() {
 		marketService.decayPrices();
 		onLeverageTick();
+		try {
+			if (exchangeService != null) {
+				exchangeService.processLimitOrders();
+			}
+		} catch (SQLException e) {
+			McEconomyMod.LOGGER.error("Limit emir isleme", e);
+		}
+		if (companyManager != null && server != null) {
+			companyManager.economyTick(marketService.economyIndex().calculate(), server);
+		}
+	}
+
+	public void onMunicipalEconomyTick() {
+		if (municipalEconomyService != null && server != null) {
+			municipalEconomyService.tick(server, marketService);
+		}
 	}
 
 	public void onInterestTick() {
@@ -975,6 +1009,14 @@ public final class EconomyManager {
 		return exchangeService;
 	}
 
+	public ExchangeCollateralService exchangeCollateralService() {
+		return exchangeCollateralService;
+	}
+
+	public ExchangeTaxService exchangeTaxService() {
+		return exchangeTaxService;
+	}
+
 	public LeverageService leverageService() {
 		return leverageService;
 	}
@@ -982,6 +1024,12 @@ public final class EconomyManager {
 	public void onLeverageTick() {
 		if (leverageService != null) {
 			leverageService.liquidationTick();
+		}
+	}
+
+	public void onLeverageFundingTick() {
+		if (leverageService != null) {
+			leverageService.fundingTick();
 		}
 	}
 

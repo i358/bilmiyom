@@ -55,6 +55,15 @@ public final class EconomyPlayerActionDispatcher {
 			case "exchange/leverage/open" -> DashboardActionService.openLeverage(uuid, text(body, "symbol"),
 					"long".equalsIgnoreCase(text(body, "side")), intVal(body, "leverage", 2), displayMcVal(body, 0));
 			case "exchange/leverage/close" -> DashboardActionService.closeLeverage(uuid, intVal(body, "positionId", -1));
+			case "exchange/collateral-deposit" -> DashboardActionService.depositCollateral(uuid, displayMcVal(body, 0));
+			case "exchange/collateral-withdraw" -> DashboardActionService.withdrawCollateral(uuid, displayMcVal(body, 0));
+			case "exchange/leverage/add-margin" -> DashboardActionService.addLeverageMargin(uuid,
+					intVal(body, "positionId", -1), displayMcVal(body, 0));
+			case "exchange/leverage/close-partial" -> DashboardActionService.closeLeveragePartial(uuid,
+					intVal(body, "positionId", -1), intVal(body, "closeBps", 0));
+			case "exchange/limit-order/place" -> DashboardActionService.placeLimitOrder(uuid, text(body, "symbol"),
+					"buy".equalsIgnoreCase(text(body, "side")), intVal(body, "amount", 0), displayMcVal(body, 0));
+			case "exchange/limit-order/cancel" -> DashboardActionService.cancelLimitOrder(uuid, intVal(body, "orderId", -1));
 			case "casino/play" -> DashboardActionService.casinoPlay(uuid, text(body, "game"), displayMcVal(body, 0), text(body, "choice"));
 			case "company/employee/fire" -> DashboardActionService.fireEmployee(uuid, longVal(body, "employeeId", -1));
 			case "company/employee/raise" -> DashboardActionService.raiseSalary(uuid, longVal(body, "employeeId", -1), displayMcVal(body, 0));

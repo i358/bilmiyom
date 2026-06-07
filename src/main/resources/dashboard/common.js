@@ -57,7 +57,8 @@ function fillSelect(id, items, valueKey, labelFn, emptyLabel) {
 }
 
 function formatMg(mg) {
-  const usd = (mg || 0) / 1000 * goldFactor;
+  const safe = Math.max(0, mg || 0);
+  const usd = safe / 1000 * goldFactor;
   return '$' + usd.toLocaleString('tr-TR', { maximumFractionDigits: 2 });
 }
 

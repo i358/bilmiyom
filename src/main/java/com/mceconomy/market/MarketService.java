@@ -362,6 +362,30 @@ public final class MarketService {
 		}
 	}
 
+	public void applyMunicipalSubsidy(long spendMg) {
+		if (spendMg <= 0) {
+			return;
+		}
+		int items = Math.min(5, catalog.allSorted().size());
+		if (items <= 0) {
+			return;
+		}
+		double boost = Math.min(50.0, spendMg / 100_000.0);
+		int i = 0;
+		for (MarketItemEntry entry : catalog.allSorted()) {
+			if (!entry.sellable()) {
+				continue;
+			}
+			MarketItemState state = itemStates.get(entry.itemId());
+			if (state != null) {
+				state.addDemand(1, boost / 100.0);
+			}
+			if (++i >= items) {
+				break;
+			}
+		}
+	}
+
 	public void decayPrices() {
 		priceEngine.decayAll();
 	}

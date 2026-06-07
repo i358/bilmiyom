@@ -1,8 +1,14 @@
 package com.mceconomy.company;
 
+import com.mceconomy.McEconomyMod;
+import com.mceconomy.config.EconomyConfig;
 import com.mceconomy.economy.CurrencyService;
+import com.mceconomy.economy.GoldStandard;
 import com.mceconomy.economy.TransactionType;
+import com.mceconomy.exchange.ExchangeTaxService;
 import com.mceconomy.persistence.repo.CompanyRepository;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -19,10 +25,16 @@ public final class CompanyManager {
 	private final Map<Integer, Map<UUID, ShareHolding>> shares = new HashMap<>();
 	private final CompanyRepository repository;
 	private final CurrencyService currencyService;
+	private ExchangeTaxService exchangeTaxService;
+	private int economyTickCounter;
 
 	public CompanyManager(CompanyRepository repository, CurrencyService currencyService) {
 		this.repository = repository;
 		this.currencyService = currencyService;
+	}
+
+	public void bindExchangeTaxService(ExchangeTaxService exchangeTaxService) {
+		this.exchangeTaxService = exchangeTaxService;
 	}
 
 	public void load() throws SQLException {
@@ -153,11 +165,12 @@ public final class CompanyManager {
 
 	public boolean buyShares(UUID buyer, String companyNameOrTicker, int amount, double economyIndex) throws SQLException {
 		Company company = resolveCompany(companyNameOrTicker);
-		if (company == null || amount <= 0 || !company.listedOnExchange()) {
+		if (company == null || amount <= 0 || !company.listedOnExchange() || company.insolvent()) {
 			return false;
 		}
 		long cost = company.sharePrice(economyIndex) * amount;
-		if (!currencyService.withdraw(buyer, cost, TransactionType.COMPANY)) {
+		long commission = exchangeTaxService != null ? exchangeTaxService.shareCommissionMg(cost) : 0;
+		if (!currencyService.withdraw(buyer, cost + commission, TransactionType.COMPANY)) {
 			return false;
 		}
 		company.deposit(cost);
@@ -171,7 +184,7 @@ public final class CompanyManager {
 
 	public boolean sellShares(UUID seller, String companyNameOrTicker, int amount, double economyIndex) throws SQLException {
 		Company company = resolveCompany(companyNameOrTicker);
-		if (company == null || amount <= 0 || !company.listedOnExchange()) {
+		if (company == null || amount <= 0 || !company.listedOnExchange() || company.insolvent()) {
 			return false;
 		}
 		ShareHolding holding = shares.getOrDefault(company.id(), Map.of()).get(seller);
@@ -179,8 +192,13 @@ public final class CompanyManager {
 			return false;
 		}
 		long payout = company.sharePrice(economyIndex) * amount;
+		long commission = exchangeTaxService != null ? exchangeTaxService.shareCommissionMg(payout) : 0;
+		if (company.treasury() < payout) {
+			holding.add(amount);
+			return false;
+		}
 		company.withdraw(payout);
-		currencyService.deposit(seller, payout, TransactionType.COMPANY);
+		currencyService.deposit(seller, payout - commission, TransactionType.COMPANY);
 		repository.save(company);
 		repository.saveShare(holding);
 		return true;
@@ -215,6 +233,83 @@ public final class CompanyManager {
 			centralBank.addMunicipalBudget(total);
 		}
 		return total;
+	}
+
+	public void economyTick(double economyIndex, MinecraftServer server) {
+		economyTickCounter++;
+		if (economyTickCounter % EconomyConfig.companyDividendIntervalTicks() == 0) {
+			try {
+				payDividends(economyIndex, server);
+			} catch (SQLException e) {
+				McEconomyMod.LOGGER.error("Temettu odemesi", e);
+			}
+		}
+		if (economyTickCounter % 1200 == 0) {
+			try {
+				checkBankruptcy(server);
+			} catch (SQLException e) {
+				McEconomyMod.LOGGER.error("Sirket iflas kontrolu", e);
+			}
+		}
+	}
+
+	private void payDividends(double economyIndex, MinecraftServer server) throws SQLException {
+		long now = System.currentTimeMillis();
+		for (Company company : listedCompanies()) {
+			if (company.insolvent() || company.treasury() < company.outstandingShares() * 10L) {
+				continue;
+			}
+			if (now - company.lastDividendAt() < EconomyConfig.companyDividendIntervalTicks() * 50L) {
+				continue;
+			}
+			long pool = company.treasury() / 20;
+			if (pool <= 0) {
+				continue;
+			}
+			Map<UUID, ShareHolding> holders = shares.get(company.id());
+			if (holders == null || holders.isEmpty()) {
+				continue;
+			}
+			int totalHeld = holders.values().stream().mapToInt(ShareHolding::amount).sum();
+			if (totalHeld <= 0) {
+				continue;
+			}
+			company.withdraw(pool);
+			for (ShareHolding holding : holders.values()) {
+				if (holding.amount() <= 0) {
+					continue;
+				}
+				long share = (pool * holding.amount()) / totalHeld;
+				if (share > 0) {
+					currencyService.deposit(holding.ownerUuid(), share, TransactionType.COMPANY);
+				}
+			}
+			company.setLastDividendAt(now);
+			repository.save(company);
+			if (server != null) {
+				server.getPlayerList().broadcastSystemMessage(Component.literal(
+						"§6[Temettü] §f" + company.name() + " — "
+								+ GoldStandard.formatMilligrams(pool) + " dagitildi."), false);
+			}
+		}
+	}
+
+	private void checkBankruptcy(MinecraftServer server) throws SQLException {
+		long threshold = EconomyConfig.companyBankruptcyTreasuryMg();
+		for (Company company : listedCompanies()) {
+			if (company.treasury() > threshold) {
+				continue;
+			}
+			if (company.ticker() != null) {
+				companiesByTicker.remove(company.ticker().toUpperCase());
+			}
+			company.markInsolvent();
+			repository.save(company);
+			if (server != null) {
+				server.getPlayerList().broadcastSystemMessage(Component.literal(
+						"§4[İflas] §c" + company.name() + " borsadan cikarildi (yetersiz kasa)."), false);
+			}
+		}
 	}
 
 	private Company resolveCompany(String nameOrTicker) {

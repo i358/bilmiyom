@@ -56,7 +56,8 @@ public final class PriceHistoryService {
 			long reserveBlocks = manager.goldReserveService() != null
 					? manager.goldReserveService().cachedGoldBlocks() : 0;
 			repository.record("MACRO", "gold_reserve", reserveBlocks * 1000L, now);
-			repository.record("MACRO", "municipal_budget", manager.centralBank().getMunicipalBudgetMg(), now);
+			repository.record("MACRO", "municipal_budget",
+					Math.max(0, manager.centralBank().getMunicipalBudgetMg()), now);
 			long fiatScaled = (long) (manager.centralBank().getFiatStrength() * 10_000);
 			repository.record("MACRO", "fiat_strength", fiatScaled, now);
 			for (var profile : manager.profiles().values()) {

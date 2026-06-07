@@ -70,4 +70,38 @@ public final class LeverageRepository {
 			ps.executeUpdate();
 		}
 	}
+
+	public void updateOpen(int id, long marginMg, long sizeMilliTokens) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement("""
+				UPDATE leverage_positions SET margin_mg = ?, size_milli_tokens = ? WHERE id = ? AND open = 1
+				""")) {
+			ps.setLong(1, marginMg);
+			ps.setLong(2, sizeMilliTokens);
+			ps.setInt(3, id);
+			ps.executeUpdate();
+		}
+	}
+
+	public long loadPoolBalanceMg() throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement(
+				"SELECT leverage_pool_mg FROM central_bank WHERE id = 1");
+			 ResultSet rs = ps.executeQuery()) {
+			if (rs.next()) {
+				return Math.max(0, rs.getLong("leverage_pool_mg"));
+			}
+		} catch (SQLException e) {
+			if (!e.getMessage().contains("leverage_pool_mg")) {
+				throw e;
+			}
+		}
+		return 0L;
+	}
+
+	public void savePoolBalanceMg(long balanceMg) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement(
+				"UPDATE central_bank SET leverage_pool_mg = ? WHERE id = 1")) {
+			ps.setLong(1, Math.max(0, balanceMg));
+			ps.executeUpdate();
+		}
+	}
 }

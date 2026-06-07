@@ -1,5 +1,7 @@
 package com.mceconomy.company;
 
+import com.mceconomy.config.EconomyConfig;
+
 import java.util.UUID;
 
 public final class Company {
@@ -11,9 +13,12 @@ public final class Company {
 	private final long createdAt;
 	private boolean listedOnExchange;
 	private String ticker;
+	private long lifetimeRevenueMg;
+	private long lastDividendAt;
+	private boolean insolvent;
 
 	public Company(int id, String name, UUID ownerUuid, long treasury, int outstandingShares, long createdAt,
-			boolean listedOnExchange, String ticker) {
+			boolean listedOnExchange, String ticker, long lifetimeRevenueMg, long lastDividendAt, boolean insolvent) {
 		this.id = id;
 		this.name = name;
 		this.ownerUuid = ownerUuid;
@@ -22,10 +27,13 @@ public final class Company {
 		this.createdAt = createdAt;
 		this.listedOnExchange = listedOnExchange;
 		this.ticker = ticker;
+		this.lifetimeRevenueMg = Math.max(0, lifetimeRevenueMg);
+		this.lastDividendAt = lastDividendAt;
+		this.insolvent = insolvent;
 	}
 
 	public static Company create(String name, UUID owner) {
-		return new Company(0, name, owner, 0, 100, System.currentTimeMillis(), false, null);
+		return new Company(0, name, owner, 0, 100, System.currentTimeMillis(), false, null, 0, 0, false);
 	}
 
 	public int id() {
@@ -49,7 +57,10 @@ public final class Company {
 	}
 
 	public void deposit(long amount) {
-		treasury += amount;
+		if (amount > 0) {
+			treasury += amount;
+			lifetimeRevenueMg += amount;
+		}
 	}
 
 	public void withdraw(long amount) {
@@ -76,9 +87,33 @@ public final class Company {
 		return ticker;
 	}
 
+	public long lifetimeRevenueMg() {
+		return lifetimeRevenueMg;
+	}
+
+	public long lastDividendAt() {
+		return lastDividendAt;
+	}
+
+	public void setLastDividendAt(long lastDividendAt) {
+		this.lastDividendAt = lastDividendAt;
+	}
+
+	public boolean insolvent() {
+		return insolvent;
+	}
+
+	public void markInsolvent() {
+		insolvent = true;
+		listedOnExchange = false;
+		ticker = null;
+	}
+
 	public void listOnExchange(String ticker) {
-		this.listedOnExchange = true;
-		this.ticker = ticker;
+		if (!insolvent) {
+			this.listedOnExchange = true;
+			this.ticker = ticker;
+		}
 	}
 
 	public void delistFromExchange() {
@@ -86,8 +121,11 @@ public final class Company {
 		this.ticker = null;
 	}
 
+	/** Defter degeri + gelir carpani (fundamental pricing). */
 	public long sharePrice(double economyIndex) {
-		long value = treasury + (long) (economyIndex * 10);
+		long bookValue = treasury + (long) (economyIndex * 10);
+		long earningsPremium = Math.round(lifetimeRevenueMg * EconomyConfig.companyFundamentalRevenueWeight());
+		long value = bookValue + earningsPremium;
 		return Math.max(1, value / outstandingShares);
 	}
 }

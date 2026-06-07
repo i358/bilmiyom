@@ -290,10 +290,30 @@ public class EconomyPanelScreen extends Screen {
 					EconomyPanelNetworking.sendAction("exchange/token/create", body);
 				});
 				ff.gap(8);
+				ff.numberField("collateralAmt", "Teminat ($)", 80, "10");
+				ff.button("Teminat Yatir", 100, () -> {
+					JsonObject body = new JsonObject();
+					body.addProperty("mc", FormFields.parseLong(EconomyPanelClientState.formField("collateralAmt", "10"), 10));
+					EconomyPanelNetworking.sendAction("exchange/collateral-deposit", body);
+				});
+				ff.button("Teminat Cek", 90, () -> {
+					JsonObject body = new JsonObject();
+					body.addProperty("mc", FormFields.parseLong(EconomyPanelClientState.formField("collateralAmt", "10"), 10));
+					EconomyPanelNetworking.sendAction("exchange/collateral-withdraw", body);
+				});
+				ff.gap(8);
 				ff.textField("levSymbol", "Coin", 60, "");
 				ff.textField("levSide", "long/short", 60, "long");
 				ff.numberField("levLeverage", "Kaldirac", 50, "2");
 				ff.numberField("levMargin", "Teminat (MC)", 80, "10");
+				ff.numberField("addMarginAmt", "Teminat ($)", 80, "10");
+				ff.button("Teminat Ekle", 90, () -> {
+					JsonObject body = new JsonObject();
+					body.addProperty("positionId", FormFields.parseInt(EconomyPanelClientState.formField("levPositionId", "0"), 0));
+					body.addProperty("mc", FormFields.parseLong(EconomyPanelClientState.formField("addMarginAmt", "10"), 10));
+					EconomyPanelNetworking.sendAction("exchange/leverage/add-margin", body);
+				});
+				ff.numberField("levPositionId", "Pozisyon #", 60, "0");
 				ff.button("Pozisyon Ac", 100, () -> {
 					JsonObject body = new JsonObject();
 					body.addProperty("symbol", EconomyPanelClientState.formField("levSymbol", ""));
@@ -1069,7 +1089,24 @@ public class EconomyPanelScreen extends Screen {
 		JsonObject data = EconomyPanelClientState.data();
 		JsonArray tokens = data.has("tokens") ? data.getAsJsonArray("tokens") : new JsonArray();
 		JsonArray companies = data.has("companies") ? data.getAsJsonArray("companies") : new JsonArray();
+		JsonArray leverage = data.has("leveragePositions") ? data.getAsJsonArray("leveragePositions") : new JsonArray();
 		int y = contentTop + 200;
+		graphics.text(font, "Borsa teminat: " + text(data, "exchangeCollateral", "-")
+				+ " (kullanilabilir: " + text(data, "exchangeCollateralAvailable", "-") + ")", cx, y, 0xFF88CCFF, false);
+		y += 12;
+		graphics.text(font, "Kilitli marj: " + text(data, "exchangeCollateralLocked", "-"), cx, y, 0xFFAAAAAA, false);
+		y += 14;
+		if (!leverage.isEmpty()) {
+			graphics.text(font, "Acik pozisyonlar:", cx, y, 0xFFE8C547, false);
+			y += 12;
+			for (int i = 0; i < Math.min(4, leverage.size()); i++) {
+				JsonObject p = leverage.get(i).getAsJsonObject();
+				graphics.text(font, "#" + p.get("id").getAsInt() + " " + p.get("symbol").getAsString()
+						+ " " + p.get("side").getAsString(), cx, y, 0xFFDDDDDD, false);
+				y += 11;
+			}
+			y += 4;
+		}
 		graphics.text(font, "Tokenler:", cx, y, 0xFFE8C547, false);
 		y += 12;
 		for (int i = 0; i < Math.min(6, tokens.size()); i++) {

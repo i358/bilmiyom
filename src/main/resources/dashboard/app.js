@@ -27,19 +27,31 @@ function chartOptions() {
   };
 }
 
-function historyWithLive(history, currentPriceMg) {
+function chartValue(point, scale = 1000) {
+  if (point?.priceMc != null && Number.isFinite(point.priceMc)) return point.priceMc;
+  const mg = point?.priceMg ?? 0;
+  if (mg < 0) return 0;
+  return mg / scale;
+}
+
+function historyWithLive(history, currentPriceMg, currentPriceMc = null) {
   const sorted = (history || []).slice().sort((a, b) => a.recordedAt - b.recordedAt);
-  if (currentPriceMg > 0) {
-    sorted.push({ recordedAt: Date.now(), priceMg: currentPriceMg });
+  const liveMg = currentPriceMg > 0 ? currentPriceMg : 0;
+  if (liveMg > 0 || (currentPriceMc != null && currentPriceMc > 0)) {
+    sorted.push({
+      recordedAt: Date.now(),
+      priceMg: liveMg,
+      priceMc: currentPriceMc != null ? currentPriceMc : (liveMg / 1000 * (goldFactor || 1))
+    });
   }
   return sorted;
 }
 
-function historyToChart(history, scale = 1000, currentPriceMg = 0) {
-  const sorted = historyWithLive(history, currentPriceMg);
+function historyToChart(history, scale = 1000, currentPriceMg = 0, currentPriceMc = null) {
+  const sorted = historyWithLive(history, currentPriceMg, currentPriceMc);
   return {
     labels: sorted.map(p => new Date(p.recordedAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })),
-    values: sorted.map(p => p.priceMg / scale)
+    values: sorted.map(p => chartValue(p, scale))
   };
 }
 
@@ -228,6 +240,7 @@ function populateSelects() {
   fillSelect('illegalSelect', catalog?.illegalGoods || [], 'id', g => `${g.name} (al: ${formatMg(g.buyPriceMg)})`);
   fillSelect('tokenChartSelect', catalog?.tokens || overview?.tokens || [], 'symbol', t => t.symbol || t.name);
   fillSelect('levSymbol', catalog?.tokens || [], 'symbol', t => `${t.symbol} (${formatMg(t.priceMg)})`);
+  fillSelect('limitSymbol', catalog?.tokens || [], 'symbol', t => `${t.symbol} (${formatMg(t.priceMg)})`);
   const levPos = me.leveragePositions || [];
   fillSelect('levChartSelect', levPos, 'id',
     p => `#${p.id} ${p.symbol} ${p.side} ${p.leverage}x`,
@@ -261,7 +274,17 @@ function renderLeverageLineChart(canvasEl, chartKey, h) {
   });
 }
 
+function renderCollateralBalances() {
+  const el = document.getElementById('collateralBalances');
+  if (!el || !me) return;
+  el.innerHTML = `
+    <div><strong>Toplam teminat:</strong> ${me.exchangeCollateral || '—'}</div>
+    <div><strong>Kilitli marj:</strong> ${me.exchangeCollateralLocked || '—'}</div>
+    <div><strong>Kullanılabilir:</strong> ${me.exchangeCollateralAvailable || '—'}</div>`;
+}
+
 async function renderLeveragePositions() {
+  renderCollateralBalances();
   const el = document.getElementById('leveragePositions');
   if (!el) return;
   const positions = me.leveragePositions || [];
@@ -273,7 +296,14 @@ async function renderLeveragePositions() {
     return `<div class="list-item position-row" style="margin-bottom:14px">
       <div><strong>#${p.id} ${p.symbol}</strong> <span class="badge ${p.side === 'LONG' ? 'badge-ok' : 'badge-bad'}">${p.side} ${p.leverage}x</span></div>
       <div class="hint">Giriş: ${formatMg(p.entryPriceMg)} · Anlık: ${formatMg(p.currentPriceMg)}</div>
-      <div class="hint">Teminat: ${p.margin} · Özsermaye: ${p.equity} · <span class="${up ? 'pnl-up' : 'pnl-down'}">K/Z ${p.pnl}</span></div>
+      <div class="hint">Teminat: ${p.margin} · Bakım marjı: ${p.maintenanceMargin || '—'} · Notional: ${p.notional || '—'}</div>
+      <div class="hint">Likidasyon fiyatı: ${p.liquidationPrice || '—'} · Özsermaye: ${p.equity} · <span class="${up ? 'pnl-up' : 'pnl-down'}">K/Z ${p.pnl}</span></div>
+      <div class="form-row" style="margin-top:8px">
+        <input type="number" min="1" placeholder="Teminat ($)" id="addMargin-${p.id}" style="max-width:120px">
+        <button class="btn btn-ghost btn-sm" data-add-margin="${p.id}">Teminat Ekle</button>
+        <select id="partialPct-${p.id}" style="max-width:90px"><option value="2500">%25</option><option value="5000">%50</option><option value="7500">%75</option></select>
+        <button class="btn btn-ghost btn-sm" data-partial="${p.id}">Kısmi Kapat</button>
+      </div>
       <canvas id="levPosChart-${p.id}" class="lev-pos-mini"></canvas>
       <button class="btn btn-ghost btn-sm" data-close="${p.id}" style="margin-top:8px">Kapat</button>
     </div>`;
@@ -286,6 +316,35 @@ async function renderLeveragePositions() {
   });
   el.querySelectorAll('button[data-close]').forEach(btn => {
     btn.onclick = () => doAction('/actions/exchange/leverage/close', { positionId: +btn.dataset.close }, refresh);
+  });
+  el.querySelectorAll('button[data-add-margin]').forEach(btn => {
+    btn.onclick = () => {
+      const id = +btn.dataset.addMargin;
+      const mc = +document.getElementById('addMargin-' + id)?.value || 0;
+      doAction('/actions/exchange/leverage/add-margin', { positionId: id, mc }, refresh);
+    };
+  });
+  el.querySelectorAll('button[data-partial]').forEach(btn => {
+    btn.onclick = () => {
+      const id = +btn.dataset.partial;
+      const closeBps = +document.getElementById('partialPct-' + id)?.value || 5000;
+      doAction('/actions/exchange/leverage/close-partial', { positionId: id, closeBps }, refresh);
+    };
+  });
+  renderLimitOrders();
+}
+
+function renderLimitOrders() {
+  const el = document.getElementById('limitOrdersList');
+  const orders = me.limitOrders || [];
+  if (!el) return;
+  if (!orders.length) { el.innerHTML = 'Açık limit emir yok.'; return; }
+  el.innerHTML = orders.map(o => `<div class="list-item">
+    #${o.id} ${o.side} ${o.amount} ${o.symbol} @ ${formatMg(o.limitPriceMg)}
+    <button class="btn btn-ghost btn-sm" data-cancel-limit="${o.id}">İptal</button>
+  </div>`).join('');
+  el.querySelectorAll('button[data-cancel-limit]').forEach(btn => {
+    btn.onclick = () => doAction('/actions/exchange/limit-order/cancel', { orderId: +btn.dataset.cancelLimit }, refresh);
   });
 }
 
@@ -765,10 +824,11 @@ function renderMacroCharts() {
   const gold = historyToChart(overview.goldReserveHistory || [], 1000);
   renderLineChart('goldReserveChart', 'goldReserve', gold.labels, gold.values, 'Altın Rezervi', '#ffd700',
     changeBpsFromHistory(overview.goldReserveHistory || []));
-  const mun = historyToChart(overview.municipalHistory || [], 1000);
-  const munLive = overview.municipalBudgetMg || 0;
+  const munLiveMg = Math.max(0, overview.municipalBudgetMg || 0);
+  const munLiveMc = overview.municipalBudgetMc ?? (munLiveMg / 1000 * (goldFactor || 1));
+  const mun = historyToChart(overview.municipalHistory || [], 1000, munLiveMg, munLiveMc);
   renderLineChart('municipalChart', 'municipal', mun.labels, mun.values, 'Belediye ($)', '#7bed9f',
-    changeBpsFromHistory(overview.municipalHistory || [], munLive));
+    changeBpsFromHistory(overview.municipalHistory || [], munLiveMg));
   if (document.getElementById('fiatStrengthChart')) {
     const fiat = historyToChart(overview.fiatStrengthHistory || [], 10000);
     const live = (overview?.fiatStrength || me?.fiatStrength || 1) * 10000;
@@ -1407,6 +1467,20 @@ document.getElementById('levOpenBtn').onclick = () => doAction('/actions/exchang
   leverage: +document.getElementById('levLeverage').value,
   mc: +document.getElementById('levMargin').value
 }, refresh);
+
+document.getElementById('collateralDepositBtn')?.addEventListener('click', () => doAction('/actions/exchange/collateral-deposit', {
+  mc: +document.getElementById('collateralAmount').value
+}, refresh));
+document.getElementById('collateralWithdrawBtn')?.addEventListener('click', () => doAction('/actions/exchange/collateral-withdraw', {
+  mc: +document.getElementById('collateralAmount').value
+}, refresh));
+
+document.getElementById('limitPlaceBtn')?.addEventListener('click', () => doAction('/actions/exchange/limit-order/place', {
+  symbol: document.getElementById('limitSymbol')?.value,
+  side: document.getElementById('limitSide')?.value,
+  amount: +document.getElementById('limitQty')?.value,
+  mc: +document.getElementById('limitPrice')?.value
+}, refresh));
 
 document.getElementById('vaultGoBtn').onclick = () => doAction('/actions/vault/teleport', {}, refresh);
 document.getElementById('vaultBackBtn').onclick = () => doAction('/actions/vault/back', {}, refresh);

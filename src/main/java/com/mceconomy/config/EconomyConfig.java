@@ -399,6 +399,106 @@ public final class EconomyConfig {
 		return data.exchangePriceImpact;
 	}
 
+	public static double exchangeSelfTradeImpactMultiplier() {
+		return data.exchangeSelfTradeImpactMultiplier;
+	}
+
+	public static double exchangeLargeHolderImpactMultiplier() {
+		return data.exchangeLargeHolderImpactMultiplier;
+	}
+
+	public static double exchangeLargeHolderThresholdPct() {
+		return data.exchangeLargeHolderThresholdPct;
+	}
+
+	public static long exchangeWashTradeWindowMs() {
+		return data.exchangeWashTradeWindowMs;
+	}
+
+	public static int exchangeWashTradeMaxMoves() {
+		return data.exchangeWashTradeMaxMoves;
+	}
+
+	public static int leverageOpenFeeBps() {
+		return data.leverageOpenFeeBps;
+	}
+
+	public static int leverageCloseFeeBps() {
+		return data.leverageCloseFeeBps;
+	}
+
+	public static long leveragePoolSeedMg() {
+		return data.leveragePoolSeedMg;
+	}
+
+	public static double leverageProfitStopajRate() {
+		return data.leverageProfitStopajRate;
+	}
+
+	public static int exchangeSpotCommissionBps() {
+		return data.exchangeSpotCommissionBps;
+	}
+
+	public static double leverageMaintenanceMarginRatio() {
+		return data.leverageMaintenanceMarginRatio;
+	}
+
+	public static int leverageFundingRateBpsPerInterval() {
+		return data.leverageFundingRateBpsPerInterval;
+	}
+
+	public static int leverageFundingIntervalTicks() {
+		return data.leverageFundingIntervalTicks;
+	}
+
+	public static int exchangeShareCommissionBps() {
+		return data.exchangeShareCommissionBps;
+	}
+
+	public static long leverageMarginCallGraceMs() {
+		return data.leverageMarginCallGraceMs;
+	}
+
+	public static int exchangeMarkPriceTradeCount() {
+		return data.exchangeMarkPriceTradeCount;
+	}
+
+	public static int exchangeCircuitBreakerBps() {
+		return data.exchangeCircuitBreakerBps;
+	}
+
+	public static long exchangeCircuitBreakerWindowMs() {
+		return data.exchangeCircuitBreakerWindowMs;
+	}
+
+	public static double exchangeSlippageImpactMultiplier() {
+		return data.exchangeSlippageImpactMultiplier;
+	}
+
+	public static int companyDividendIntervalTicks() {
+		return data.companyDividendIntervalTicks;
+	}
+
+	public static long companyBankruptcyTreasuryMg() {
+		return data.companyBankruptcyTreasuryMg;
+	}
+
+	public static double companyFundamentalRevenueWeight() {
+		return data.companyFundamentalRevenueWeight;
+	}
+
+	public static int municipalAutoSpendIntervalTicks() {
+		return data.municipalAutoSpendIntervalTicks;
+	}
+
+	public static int municipalAutoSpendRateBps() {
+		return data.municipalAutoSpendRateBps;
+	}
+
+	public static long municipalAutoSpendMinBudgetMg() {
+		return data.municipalAutoSpendMinBudgetMg;
+	}
+
 	public static boolean webDashboardEnabled() {
 		return data.webDashboardEnabled;
 	}
@@ -869,6 +969,31 @@ public final class EconomyConfig {
 		public long tokenCreationFeeMg = 150_000;
 		public long bankCertificateCostMg = 300_000;
 		public double exchangePriceImpact = 0.02;
+		public double exchangeSelfTradeImpactMultiplier = 0.0;
+		public double exchangeLargeHolderImpactMultiplier = 0.1;
+		public double exchangeLargeHolderThresholdPct = 25.0;
+		public long exchangeWashTradeWindowMs = 60_000L;
+		public int exchangeWashTradeMaxMoves = 3;
+		public int leverageOpenFeeBps = 50;
+		public int leverageCloseFeeBps = 50;
+		public long leveragePoolSeedMg = 0L;
+		public double leverageProfitStopajRate = 0.15;
+		public int exchangeSpotCommissionBps = 10;
+		public double leverageMaintenanceMarginRatio = 0.5;
+		public int leverageFundingRateBpsPerInterval = 5;
+		public int leverageFundingIntervalTicks = 1200;
+		public int exchangeShareCommissionBps = 10;
+		public long leverageMarginCallGraceMs = 3_600_000L;
+		public int exchangeMarkPriceTradeCount = 20;
+		public int exchangeCircuitBreakerBps = 1500;
+		public long exchangeCircuitBreakerWindowMs = 86_400_000L;
+		public double exchangeSlippageImpactMultiplier = 2.0;
+		public int companyDividendIntervalTicks = 7200;
+		public long companyBankruptcyTreasuryMg = 0L;
+		public double companyFundamentalRevenueWeight = 0.25;
+		public int municipalAutoSpendIntervalTicks = 2400;
+		public int municipalAutoSpendRateBps = 50;
+		public long municipalAutoSpendMinBudgetMg = 500_000L;
 		public boolean webDashboardEnabled = true;
 		public int webPort = 8765;
 		public String webBindAddress = "0.0.0.0";

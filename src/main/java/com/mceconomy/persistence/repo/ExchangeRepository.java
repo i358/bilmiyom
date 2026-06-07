@@ -1,5 +1,6 @@
 package com.mceconomy.persistence.repo;
 
+import com.mceconomy.exchange.ExchangeLimitOrder;
 import com.mceconomy.exchange.ExchangeToken;
 
 import java.sql.Connection;
@@ -46,6 +47,22 @@ public final class ExchangeRepository {
 		return holdings;
 	}
 
+	public Map<Integer, Map<UUID, Long>> loadAllCostBasis() throws SQLException {
+		Map<Integer, Map<UUID, Long>> basis = new HashMap<>();
+		try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM token_holdings");
+			 ResultSet rs = ps.executeQuery()) {
+			while (rs.next()) {
+				int tokenId = rs.getInt("token_id");
+				UUID owner = UUID.fromString(rs.getString("owner_uuid"));
+				long cost = getLongColumn(rs, "cost_basis_mg", 0);
+				if (cost > 0) {
+					basis.computeIfAbsent(tokenId, k -> new HashMap<>()).put(owner, cost);
+				}
+			}
+		}
+		return basis;
+	}
+
 	public void saveToken(ExchangeToken token) throws SQLException {
 		if (token.id() <= 0) {
 			insertToken(token);
@@ -55,14 +72,61 @@ public final class ExchangeRepository {
 	}
 
 	public void saveHolding(int tokenId, UUID owner, int amount) throws SQLException {
+		saveHolding(tokenId, owner, amount, 0);
+	}
+
+	public void saveHolding(int tokenId, UUID owner, int amount, long costBasisMg) throws SQLException {
 		try (PreparedStatement ps = connection.prepareStatement("""
-				INSERT INTO token_holdings(token_id, owner_uuid, amount)
-				VALUES(?, ?, ?)
-				ON CONFLICT(token_id, owner_uuid) DO UPDATE SET amount=excluded.amount
+				INSERT INTO token_holdings(token_id, owner_uuid, amount, cost_basis_mg)
+				VALUES(?, ?, ?, ?)
+				ON CONFLICT(token_id, owner_uuid) DO UPDATE SET
+					amount=excluded.amount, cost_basis_mg=excluded.cost_basis_mg
 				""")) {
 			ps.setInt(1, tokenId);
 			ps.setString(2, owner.toString());
 			ps.setInt(3, amount);
+			ps.setLong(4, Math.max(0, costBasisMg));
+			ps.executeUpdate();
+		}
+	}
+
+	public List<ExchangeLimitOrder> loadOpenLimitOrders() throws SQLException {
+		List<ExchangeLimitOrder> orders = new ArrayList<>();
+		try (PreparedStatement ps = connection.prepareStatement(
+				"SELECT * FROM exchange_limit_orders WHERE open = 1 ORDER BY created_at");
+			 ResultSet rs = ps.executeQuery()) {
+			while (rs.next()) {
+				orders.add(mapLimitOrder(rs));
+			}
+		}
+		return orders;
+	}
+
+	public int insertLimitOrder(ExchangeLimitOrder order) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement("""
+				INSERT INTO exchange_limit_orders(owner_uuid, symbol, is_buy, amount, limit_price_mg, created_at, open)
+				VALUES(?, ?, ?, ?, ?, ?, 1)
+				""", Statement.RETURN_GENERATED_KEYS)) {
+			ps.setString(1, order.owner().toString());
+			ps.setString(2, order.symbol());
+			ps.setInt(3, order.isBuy() ? 1 : 0);
+			ps.setInt(4, order.amount());
+			ps.setLong(5, order.limitPriceMg());
+			ps.setLong(6, order.createdAt());
+			ps.executeUpdate();
+			try (ResultSet keys = ps.getGeneratedKeys()) {
+				if (keys.next()) {
+					return keys.getInt(1);
+				}
+			}
+		}
+		return -1;
+	}
+
+	public void cancelLimitOrder(int id) throws SQLException {
+		try (PreparedStatement ps = connection.prepareStatement(
+				"UPDATE exchange_limit_orders SET open = 0 WHERE id = ?")) {
+			ps.setInt(1, id);
 			ps.executeUpdate();
 		}
 	}
@@ -126,6 +190,26 @@ public final class ExchangeRepository {
 				rs.getLong("treasury_mg"),
 				rs.getLong("created_at")
 		);
+	}
+
+	private ExchangeLimitOrder mapLimitOrder(ResultSet rs) throws SQLException {
+		return new ExchangeLimitOrder(
+				rs.getInt("id"),
+				UUID.fromString(rs.getString("owner_uuid")),
+				rs.getString("symbol"),
+				rs.getInt("is_buy") == 1,
+				rs.getInt("amount"),
+				rs.getLong("limit_price_mg"),
+				rs.getLong("created_at"),
+				rs.getInt("open") == 1);
+	}
+
+	private static long getLongColumn(ResultSet rs, String column, long defaultValue) {
+		try {
+			return rs.getLong(column);
+		} catch (SQLException e) {
+			return defaultValue;
+		}
 	}
 
 	public void deleteToken(int tokenId) throws SQLException {

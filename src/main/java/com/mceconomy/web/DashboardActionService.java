@@ -488,6 +488,10 @@ public final class DashboardActionService {
 
 	public static ActionResult buyToken(UUID uuid, String symbol, int amount) {
 		try {
+			var leverage = McEconomyMod.getEconomyManager().leverageService();
+			if (leverage != null && leverage.hasOpenLong(uuid, symbol)) {
+				return ActionResult.fail("Acik LONG kaldirac pozisyonu varken bu coin alinamaz.");
+			}
 			if (McEconomyMod.getEconomyManager().exchangeService().buyToken(uuid, symbol, amount)) {
 				return ActionResult.ok(amount + " " + symbol.toUpperCase() + " coin alındı.");
 			}
@@ -656,6 +660,10 @@ public final class DashboardActionService {
 		if (amount <= 0) {
 			return ActionResult.fail("Geçerli bir miktar girin.");
 		}
+		var leverage = McEconomyMod.getEconomyManager().leverageService();
+		if (leverage != null && leverage.hasOpenShort(uuid, symbol)) {
+			return ActionResult.fail("Acik SHORT kaldirac pozisyonu varken bu coin satilamaz.");
+		}
 		var exchange = McEconomyMod.getEconomyManager().exchangeService();
 		var tokenOpt = exchange.findToken(symbol);
 		if (tokenOpt.isEmpty()) {
@@ -767,6 +775,78 @@ public final class DashboardActionService {
 		String result = McEconomyMod.getEconomyManager().leverageService().closePosition(uuid, positionId);
 		boolean ok = result.startsWith("KAPANDI");
 		return ok ? ActionResult.ok(result) : ActionResult.fail(result);
+	}
+
+	public static ActionResult depositCollateral(UUID uuid, long displayMc) {
+		long amountMg = mgForDisplayMc(displayMc);
+		if (amountMg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
+		var manager = McEconomyMod.getEconomyManager();
+		if (manager.exchangeCollateralService().depositFromWallet(uuid, amountMg)) {
+			return ActionResult.ok("Borsa teminat hesabına yatırıldı: "
+					+ GoldStandard.formatMilligrams(amountMg));
+		}
+		return ActionResult.fail("Yatırma başarısız (cüzdan bakiyesi yetersiz).");
+	}
+
+	public static ActionResult addLeverageMargin(UUID uuid, int positionId, long displayMc) {
+		long amountMg = mgForDisplayMc(displayMc);
+		if (amountMg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
+		String result = McEconomyMod.getEconomyManager().leverageService().addMargin(uuid, positionId, amountMg);
+		boolean ok = result.startsWith("Teminat");
+		return ok ? ActionResult.ok(result) : ActionResult.fail(result);
+	}
+
+	public static ActionResult closeLeveragePartial(UUID uuid, int positionId, int closeBps) {
+		if (closeBps <= 0 || closeBps > 10_000) {
+			return ActionResult.fail("Kapanış oranı 1–10000 bps olmalı.");
+		}
+		String result = McEconomyMod.getEconomyManager().leverageService()
+				.closePositionPartial(uuid, positionId, closeBps);
+		boolean ok = result.startsWith("KAPANDI") || result.startsWith("KISMI");
+		return ok ? ActionResult.ok(result) : ActionResult.fail(result);
+	}
+
+	public static ActionResult placeLimitOrder(UUID uuid, String symbol, boolean isBuy, int amount, long displayMc) {
+		long limitPriceMg = mgForDisplayMc(displayMc);
+		if (limitPriceMg <= 0 || amount <= 0) {
+			return ActionResult.fail("Geçersiz emir.");
+		}
+		try {
+			String result = McEconomyMod.getEconomyManager().exchangeService()
+					.placeLimitOrder(uuid, symbol, isBuy, amount, limitPriceMg);
+			boolean ok = result.startsWith("LIMIT");
+			return ok ? ActionResult.ok(result) : ActionResult.fail(result);
+		} catch (Exception e) {
+			return ActionResult.fail("Limit emir verilemedi.");
+		}
+	}
+
+	public static ActionResult cancelLimitOrder(UUID uuid, int orderId) {
+		try {
+			if (McEconomyMod.getEconomyManager().exchangeService().cancelLimitOrder(uuid, orderId)) {
+				return ActionResult.ok("Limit emir iptal edildi.");
+			}
+		} catch (Exception e) {
+			return ActionResult.fail("Emir iptal edilemedi.");
+		}
+		return ActionResult.fail("Emir bulunamadı.");
+	}
+
+	public static ActionResult withdrawCollateral(UUID uuid, long displayMc) {
+		long amountMg = mgForDisplayMc(displayMc);
+		if (amountMg <= 0) {
+			return ActionResult.fail("Geçersiz tutar.");
+		}
+		var manager = McEconomyMod.getEconomyManager();
+		long locked = manager.leverageService().lockedMarginMg(uuid);
+		if (manager.exchangeCollateralService().withdrawToWallet(uuid, amountMg, locked)) {
+			return ActionResult.ok("Teminat çekildi: " + GoldStandard.formatMilligrams(amountMg));
+		}
+		return ActionResult.fail("Çekme başarısız (kullanılabilir teminat yetersiz veya kilitli marj).");
 	}
 
 	public static ActionResult delistCompany(UUID uuid, String companyName) {

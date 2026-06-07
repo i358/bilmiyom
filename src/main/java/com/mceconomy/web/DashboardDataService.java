@@ -668,8 +668,10 @@ public final class DashboardDataService {
 			}
 		}
 		data.add("topHistories", topItemHistories);
-		data.addProperty("municipalBudgetMg", manager.centralBank().getMunicipalBudgetMg());
-		data.addProperty("municipalBudget", GoldStandard.formatMilligrams(manager.centralBank().getMunicipalBudgetMg()));
+		long municipalMg = manager.centralBank().getMunicipalBudgetMg();
+		data.addProperty("municipalBudgetMg", municipalMg);
+		data.addProperty("municipalBudgetMc", GoldStandard.milligramsToMc(municipalMg));
+		data.addProperty("municipalBudget", GoldStandard.formatMilligrams(municipalMg));
 		data.add("inflationHistory", loadHistory("MACRO", "inflation", 48));
 		data.add("goldReserveHistory", loadHistory("MACRO", "gold_reserve", 48));
 		data.add("municipalHistory", loadHistory("MACRO", "municipal_budget", 48));
@@ -1287,8 +1289,13 @@ public final class DashboardDataService {
 		JsonArray history = new JsonArray();
 		try {
 			for (Map<String, Object> row : McEconomyMod.getEconomyManager().priceHistoryRepository().loadRecent(type, symbol, limit)) {
+				long priceMg = ((Number) row.get("priceMg")).longValue();
+				if ("MACRO".equals(type) && "municipal_budget".equals(symbol)) {
+					priceMg = Math.min(com.mceconomy.tax.CentralBank.MAX_MUNICIPAL_BUDGET_MG, Math.max(0, priceMg));
+				}
 				JsonObject point = new JsonObject();
-				point.addProperty("priceMg", ((Number) row.get("priceMg")).longValue());
+				point.addProperty("priceMg", priceMg);
+				point.addProperty("priceMc", GoldStandard.milligramsToMc(Math.max(0, priceMg)));
 				point.addProperty("recordedAt", ((Number) row.get("recordedAt")).longValue());
 				history.add(point);
 			}
@@ -1472,9 +1479,38 @@ public final class DashboardDataService {
 			row.addProperty("currentPriceMg", pos.currentPriceMg());
 			row.addProperty("pnl", (pos.pnlMg() >= 0 ? "+" : "") + GoldStandard.formatMilligrams(pos.pnlMg()));
 			row.addProperty("equity", GoldStandard.formatMilligrams(pos.equityMg()));
+			row.addProperty("maintenanceMarginMg", pos.maintenanceMarginMg());
+			row.addProperty("maintenanceMargin", GoldStandard.formatMilligrams(pos.maintenanceMarginMg()));
+			row.addProperty("notionalMg", pos.notionalMg());
+			row.addProperty("notional", GoldStandard.formatMilligrams(pos.notionalMg()));
+			row.addProperty("liquidationPriceMg", pos.liquidationPriceMg());
+			row.addProperty("liquidationPrice", GoldStandard.formatMilligrams(pos.liquidationPriceMg()));
 			leveragePositions.add(row);
 		}
 		data.add("leveragePositions", leveragePositions);
+
+		JsonArray limitOrders = new JsonArray();
+		for (var order : manager.exchangeService().openLimitOrders(uuid)) {
+			JsonObject row = new JsonObject();
+			row.addProperty("id", order.id());
+			row.addProperty("symbol", order.symbol());
+			row.addProperty("side", order.isBuy() ? "BUY" : "SELL");
+			row.addProperty("amount", order.amount());
+			row.addProperty("limitPriceMg", order.limitPriceMg());
+			row.addProperty("limitPrice", GoldStandard.formatMilligrams(order.limitPriceMg()));
+			limitOrders.add(row);
+		}
+		data.add("limitOrders", limitOrders);
+
+		long collateralLocked = manager.leverageService().lockedMarginMg(uuid);
+		long collateralMg = manager.exchangeCollateralService().balanceMg(uuid);
+		long collateralAvailable = manager.exchangeCollateralService().availableMg(uuid, collateralLocked);
+		data.addProperty("exchangeCollateralMg", collateralMg);
+		data.addProperty("exchangeCollateral", GoldStandard.formatMilligrams(collateralMg));
+		data.addProperty("exchangeCollateralLockedMg", collateralLocked);
+		data.addProperty("exchangeCollateralLocked", GoldStandard.formatMilligrams(collateralLocked));
+		data.addProperty("exchangeCollateralAvailableMg", collateralAvailable);
+		data.addProperty("exchangeCollateralAvailable", GoldStandard.formatMilligrams(collateralAvailable));
 
 		JsonArray privateDeposits = new JsonArray();
 		for (PrivateBank privateBank : manager.privateBankService().allBanks()) {
@@ -1594,6 +1630,9 @@ public final class DashboardDataService {
 		row.addProperty("marginMg", pos.marginMg());
 		row.addProperty("pnlMg", pos.pnlMg());
 		row.addProperty("equityMg", pos.equityMg());
+		row.addProperty("maintenanceMarginMg", pos.maintenanceMarginMg());
+		row.addProperty("notionalMg", pos.notionalMg());
+		row.addProperty("liquidationPriceMg", pos.liquidationPriceMg());
 		row.addProperty("valueMg", pos.equityMg());
 		row.add("history", history);
 		row.addProperty("changeBps", priceChangeBps(history, pos.currentPriceMg()));

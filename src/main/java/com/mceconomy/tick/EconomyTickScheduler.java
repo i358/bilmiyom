@@ -12,6 +12,9 @@ public final class EconomyTickScheduler {
 		if (tickCounter % EconomyConfig.marketDecayIntervalTicks() == 0) {
 			manager.onMarketTick();
 		}
+		if (tickCounter % EconomyConfig.leverageFundingIntervalTicks() == 0) {
+			manager.onLeverageFundingTick();
+		}
 		if (tickCounter % EconomyConfig.interestIntervalTicks() == 0) {
 			manager.onInterestTick();
 			manager.onLoanTick();
@@ -45,6 +48,9 @@ public final class EconomyTickScheduler {
 		if (tickCounter % 1200 == 0) {
 			manager.onGuildTick();
 			manager.onMayorTick();
+		}
+		if (tickCounter % EconomyConfig.municipalAutoSpendIntervalTicks() == 0) {
+			manager.onMunicipalEconomyTick();
 		}
 		if (tickCounter % 40 == 0) {
 			manager.syncHudForOnlinePlayers();
